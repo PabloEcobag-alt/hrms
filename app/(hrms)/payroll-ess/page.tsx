@@ -1,3 +1,5 @@
+import { ModulePlaceholder } from "@/components/shared/module-placeholder";
+
 export default function Page() {
-  return <h1>Payroll & ESS</h1>;
+  return <ModulePlaceholder name="Payroll & ESS" />;
 }
