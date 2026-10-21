@@ -36,6 +36,13 @@ describe("dev bypass", () => {
     ).toThrow(/HRMS_APP_URL/);
   });
 
+  it("treats an unset address as localhost, and refuses the deployed one", () => {
+    expect(devBypassEnabled({ ...on, NODE_ENV: "development" })).toBe(true);
+    expect(() =>
+      devBypassEnabled({ ...on, NODE_ENV: "development", HRMS_APP_URL: "https://hrms-arae.vercel.app" }),
+    ).toThrow(/HRMS_APP_URL/);
+  });
+
   it("refuses to start on a Vercel deployment", () => {
     expect(() =>
       devBypassEnabled({ ...on, NODE_ENV: "development", VERCEL_ENV: "preview" }),

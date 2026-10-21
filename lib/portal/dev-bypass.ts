@@ -3,6 +3,9 @@ import type { Staff } from "./client";
 // URL.hostname keeps the brackets on IPv6 literals.
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+/** Where HRMS runs locally when HRMS_APP_URL is not set. */
+const DEFAULT_APP_URL = "http://localhost:3001";
+
 export const DEV_STAFF: Staff = {
   name: "Dev Staff",
   username: "dev.staff",
@@ -28,9 +31,9 @@ export function devBypassEnabled(env: Record<string, string | undefined> = proce
     throw new Error("HRMS_DEV_BYPASS must not be set on a Vercel deployment");
   }
 
-  const appUrl = env.HRMS_APP_URL;
+  const appUrl = env.HRMS_APP_URL ?? DEFAULT_APP_URL;
 
-  if (appUrl && !LOCAL_HOSTS.has(new URL(appUrl).hostname)) {
+  if (!LOCAL_HOSTS.has(new URL(appUrl).hostname)) {
     throw new Error(`HRMS_DEV_BYPASS must not be set with a non-localhost HRMS_APP_URL (${appUrl})`);
   }
 
