@@ -57,7 +57,7 @@ describe("dev bypass", () => {
   });
 
   it("opens every Module as a fully-permitted Staff member, with no session and no Portal", async () => {
-    const access = accessFor({ bypass: true });
+    const access = accessFor(undefined, { bypass: true });
 
     expect(await access.check("Attendance")).toEqual({ decision: "allowed", staff: DEV_STAFF });
     expect(await access.overview()).toEqual({
@@ -67,10 +67,10 @@ describe("dev bypass", () => {
     });
   });
 
-  it("allows nothing without the bypass, since the Portal is not wired in yet", async () => {
-    const access = accessFor({ bypass: false });
+  it("allows nothing without the bypass and without a session", async () => {
+    const access = accessFor(undefined, { bypass: false });
 
-    expect(await access.check("Dashboard")).toEqual({ decision: "unavailable" });
-    expect(await access.overview()).toEqual({ decision: "unavailable" });
+    expect(await access.check("Dashboard")).toEqual({ decision: "invalid" });
+    expect(await access.overview()).toEqual({ decision: "invalid" });
   });
 });
