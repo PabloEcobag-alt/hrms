@@ -60,7 +60,7 @@ export const systems: SystemItem[] = [
     desc: "Contact profiles, tickets & marketing",
     icon: Building2,
     active: false,
-    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://localhost:3005/",
+    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://epic-crms.vercel.app/",
   },
   {
     fullName: "Human Resource Management",

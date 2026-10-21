@@ -1,3 +1,5 @@
+import { ModulePlaceholder } from "@/components/shared/module-placeholder";
+
 export default function Page() {
-  return <h1>Attendance</h1>;
+  return <ModulePlaceholder name="Attendance" />;
 }

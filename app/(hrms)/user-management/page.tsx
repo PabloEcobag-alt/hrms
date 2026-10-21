@@ -1,3 +1,5 @@
+import { ModulePlaceholder } from "@/components/shared/module-placeholder";
+
 export default function Page() {
-  return <h1>User Management</h1>;
+  return <ModulePlaceholder name="User Management" />;
 }
