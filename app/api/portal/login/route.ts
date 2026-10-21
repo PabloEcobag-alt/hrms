@@ -4,8 +4,6 @@ import { HANDOFF_COOKIE, CALLBACK_PATH, portalConfig } from "@/lib/portal/config
 import { challengeFor, newState, newVerifier } from "@/lib/portal/pkce";
 import { safeReturnTo } from "@/lib/portal/return-to";
 
-export const dynamic = "force-dynamic";
-
 /** Starts the handoff: remembers the page asked for and sends the browser to the Portal. */
 export function GET(request: NextRequest) {
   // With the dev bypass there is no Portal to sign in through.

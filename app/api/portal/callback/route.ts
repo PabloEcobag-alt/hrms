@@ -3,8 +3,6 @@ import { exchangeCode } from "@/lib/portal/client";
 import { HANDOFF_COOKIE, CALLBACK_PATH, SESSION_COOKIE } from "@/lib/portal/config";
 import { safeReturnTo } from "@/lib/portal/return-to";
 
-export const dynamic = "force-dynamic";
-
 type Handoff = { state: string; verifier: string; returnTo: string };
 
 function readHandoff(request: NextRequest): Handoff | null {

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { devBypassEnabled } from "@/lib/portal/dev-bypass";
 import { SESSION_COOKIE, portalConfig } from "@/lib/portal/config";
 
-export const dynamic = "force-dynamic";
-
 /**
  * Sends the browser to the Portal's logout, which ends the one central session for every
  * System in this browser and lands on the Portal login. POST so a link or image cannot sign

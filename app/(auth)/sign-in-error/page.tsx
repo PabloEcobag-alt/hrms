@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { LOGIN_PATH } from "@/lib/portal/config";
 
 const MESSAGES: Record<string, { title: string; body: string }> = {
@@ -15,19 +16,29 @@ const MESSAGES: Record<string, { title: string; body: string }> = {
   },
 };
 
-export default async function SignInErrorPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ reason?: string }>;
-}) {
+async function Message({ searchParams }: { searchParams: Promise<{ reason?: string }> }) {
   const { reason } = await searchParams;
   const message = MESSAGES[reason ?? ""] ?? MESSAGES.failed;
 
   return (
+    <>
+      <h1 className="text-headline-md text-foreground">{message.title}</h1>
+      <p className="text-body-sm text-muted-foreground">{message.body}</p>
+    </>
+  );
+}
+
+export default function SignInErrorPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string }>;
+}) {
+  return (
     <main className="min-h-screen flex items-center justify-center p-md">
       <div className="max-w-[28rem] space-y-sm text-center">
-        <h1 className="text-headline-md text-foreground">{message.title}</h1>
-        <p className="text-body-sm text-muted-foreground">{message.body}</p>
+        <Suspense fallback={null}>
+          <Message searchParams={searchParams} />
+        </Suspense>
         <a href={LOGIN_PATH} className="text-sm font-medium underline">
           Try signing in again
         </a>
