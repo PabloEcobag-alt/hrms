@@ -6,13 +6,15 @@ import { safeReturnTo } from "@/lib/portal/return-to";
 
 /** Starts the handoff: remembers the page asked for and sends the browser to the Portal. */
 export function GET(request: NextRequest) {
+  // Reading the request first keeps this route dynamic, so the build never runs it without a Portal configured.
+  const returnTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"));
+
   // With the dev bypass there is no Portal to sign in through.
   if (devBypassEnabled()) {
-    return NextResponse.redirect(new URL(safeReturnTo(request.nextUrl.searchParams.get("returnTo")), request.url));
+    return NextResponse.redirect(new URL(returnTo, request.url));
   }
 
   const { portalUrl, systemName, callbackUrl } = portalConfig();
-  const returnTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"));
   const state = newState();
   const verifier = newVerifier();
 
