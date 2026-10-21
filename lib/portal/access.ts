@@ -1,4 +1,4 @@
-import type { Staff, Validation } from "./client";
+import { validateSession, type Staff, type Validation } from "./client";
 import { DEV_STAFF, devBypassEnabled } from "./dev-bypass";
 import { MODULES } from "@/lib/modules";
 
@@ -9,18 +9,32 @@ export type Overview =
   | { decision: "unavailable" };
 
 /**
- * Access for one page load. Only the dev-bypass answers for now; the Portal's answers
- * arrive with sign-in, and until then HRMS denies rather than guesses.
+ * Access for one page load. The Portal is asked once per Module and the answer is
+ * reused for the rest of the load; nothing is remembered beyond it.
  */
 export function accessFor(
+  sessionHandle: string | undefined,
   { bypass = devBypassEnabled() }: { bypass?: boolean } = {},
 ) {
-  // The Module only matters once the Portal answers per Module.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function check(_module: string): Promise<Validation> {
-    return Promise.resolve(
-      bypass ? { decision: "allowed", staff: DEV_STAFF } : { decision: "unavailable" },
-    );
+  const answers = new Map<string, Promise<Validation>>();
+
+  function check(module: string): Promise<Validation> {
+    if (bypass) {
+      return Promise.resolve({ decision: "allowed", staff: DEV_STAFF });
+    }
+
+    if (!sessionHandle) {
+      return Promise.resolve({ decision: "invalid" });
+    }
+
+    let answer = answers.get(module);
+
+    if (!answer) {
+      answer = validateSession(sessionHandle, module);
+      answers.set(module, answer);
+    }
+
+    return answer;
   }
 
   /** Every Module at once: who the Staff member is and which pages they may open. */
