@@ -1,3 +1,7 @@
 export default function Page() {
-  return <h1>Dashboard</h1>;
+  return (
+    <div className="p-md sm:p-lg">
+      <h1 className="text-headline-md">Dashboard</h1>
+    </div>
+  );
 }
