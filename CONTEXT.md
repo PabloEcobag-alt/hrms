@@ -19,3 +19,7 @@ _Avoid_: Permission, feature, section, page
 **Attendance**:
 The Module for employee attendance. Biometrics is not a separate Module and is not part of its name.
 _Avoid_: Attendance Biometrics, Biometrics
+
+**Widget**:
+A summary block on the Dashboard that belongs to exactly one Module and is shown only to Staff who hold that Module. Until its Module has data, a Widget shows the Module name, its purpose, a link into the Module, and "Nothing to show yet". The Dashboard has no Widget of its own.
+_Avoid_: Tile, panel, card
