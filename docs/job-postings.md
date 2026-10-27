@@ -1,0 +1,61 @@
+# Job Posting backend and shared Careers schema
+
+Ticket #30 implements `jobPostingsFor(sessionHandle)` in `lib/job-postings.ts`.
+Call it only on the server with the opaque Portal session handle from the current
+request. It uses `DATABASE_URL`; tests may supply disposable Postgres as the second
+argument. Each operation rechecks the Recruitment and Hiring Module through the
+Portal, including reads. Invalid, denied and unavailable decisions fail closed.
+
+- `saveDraft(fields)` accepts any subset of the Job Posting fields.
+- `editDraft(id, fields)` patches only supplied fields; an empty patch is a read.
+- `read(id)` returns the posting or `undefined`.
+- `list({ status?, search? })` includes every status by default. Search is a literal,
+  case-insensitive title substring. Results are ordered by latest update, then id.
+- `deleteDraft(id)` deletes only a Draft. Edit and delete refuse other statuses
+  (`not-draft`) and missing ids (`not-found`). Both guard status in the write itself.
+
+Drafts use lowercase `draft`, empty text/arrays for missing content and `null` for
+an absent deadline. `deadline: null`, empty strings and empty arrays clear fields.
+Status and id cannot be changed through field patches. Publish, Open edits, status
+transitions, templates, auditing and announcements belong to subsequent tickets.
+
+## Migration and deployment
+
+HRMS writes directly to the existing `public.job_postings` table in the
+`brenraphaels-ats` Neon project. It does not create a second copy or use a webhook.
+Set the pooled `DATABASE_URL` and direct, non-pooled `DIRECT_URL` in gitignored
+`.env.local` and deployment environment variables. Never commit credentials.
+
+Run `npm run db:migrate` before deploying callers of the new module. This runs the
+versioned SQL in `migrations/` transactionally under an advisory lock, records
+checksums in `public.hrms_schema_migrations`, and skips already applied migrations.
+It rejects changed applied files. Migration does not run during app startup/build.
+
+`0001-job-posting-drafts.sql` makes deadline nullable and constrains status to
+`draft`, `open`, `closed`, or `filled`. Existing rows are retained. Rollback of the
+nullable deadline requires resolving/deleting incomplete Drafts first; rolling
+back application code alone does not require reverting this schema.
+
+## Contract for Careers
+
+Careers must keep filtering **every public list, detail lookup, filter-option query
+and application eligibility check** to `status = 'open' AND deadline > now()`.
+Draft, Closed and Filled postings must never appear publicly or accept Applications.
+A missing deadline is never eligible. Do not replace the positive Open condition
+with `status != 'closed'`; that would expose Drafts. Careers' current list/detail
+queries already use the positive Open condition.
+
+Careers' schema declaration should allow a nullable deadline and include `draft`
+where it models stored status. The public Open representation may keep a required
+deadline after the query proves it is present. Preserve these changes in future
+Careers migrations and retire the legacy Job Posting webhook writer as the shared
+ownership decision is rolled out. HRMS owns Job Posting writes.
+
+## Verification
+
+`npm test -- tests/job-postings.test.ts` runs against a fresh PGlite database
+(real Postgres compiled to WASM, in memory) per test, starting with the existing
+Careers table definition and applying the migration. It never connects to shared
+rows. Only the module interface is exercised; the fake Portal sits at the HTTP
+boundary. Existing Open/Closed/Filled rows are fixtures, not test-only publishing
+operations. `npm run typecheck`, `npm run lint`, and `npm test` validate the repo.
