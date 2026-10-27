@@ -16,6 +16,18 @@ _Avoid_: Auth app, login site
 A feature area of HRMS that the Portal grants or revokes per Staff member, shown as one tab in the sidebar. Each HRMS page belongs to exactly one Module. The Modules are Dashboard, Attendance, Employee Information, Payroll & ESS, Recruitment and Hiring, and User Management. The Portal and HRMS use the same Module names.
 _Avoid_: Permission, feature, section, page
 
+**HR-ATS**:
+The company's Applicant Tracking System, which is the Recruitment and Hiring Module of HRMS. It is where Staff author Job Postings and, later, work Applications through the hiring workflow. The Careers site of the e-commerce app reads what HR-ATS publishes.
+_Avoid_: ATS app, recruitment app
+
+**Job Posting**:
+One open role that Staff author in HR-ATS and Applicants see on the Careers site. It can be started from a Job Template or typed from scratch, and is Draft, Open, Closed or Filled. Only an Open Job Posting is visible on Careers. HRMS and Careers share one database, so a Job Posting is one record seen by both.
+_Avoid_: Job, listing, vacancy
+
+**Job Template**:
+A saved, reusable role definition that Staff start Job Postings from. It exists only because Staff explicitly saved it; typing a Job Posting from scratch never creates one unless Staff choose "Save as template".
+_Avoid_: Saved job, preset
+
 **Attendance**:
 The Module for employee attendance. Biometrics is not a separate Module and is not part of its name.
 _Avoid_: Attendance Biometrics, Biometrics
