@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardsFor, detailWidgetRowsFor, type DashboardSummary } from "@/lib/dashboard";
+import { cardsFor, detailWidgetRowsFor, type DashboardSummary, type UpcomingEvent } from "@/lib/dashboard";
 
 const ALL = ["/dashboard", "/attendance", "/employee-information", "/recruitment-and-hiring"];
 
@@ -122,11 +122,25 @@ describe("Headcount Trend", () => {
   it("is absent when there is no data at all", () => {
     expect(trend({})).toBeNull();
   });
+
+  it("leaves the current month a gap when only history has it, so it never disagrees with the card", () => {
+    const t = trend({ headcountHistory: [{ month: "2026-10", total: 99 }, { month: "2026-09", total: 7 }] })!;
+    expect(t[11].total).toBeNull();
+    expect(t[10].total).toBe(7);
+  });
+
+  it("ends on the figure the Total Employee card shows", () => {
+    const summary = { totalEmployee: { regular: 8, probationary: 1, ojt: 4 } };
+    const [card] = cardsFor(["/employee-information"], summary);
+    expect(String(trend(summary)!.at(-1)!.total)).toBe(card.figure);
+  });
 });
 
 describe("Department Distribution", () => {
   const slices = (summary: DashboardSummary) =>
-    detailWidgetRowsFor(["/employee-information"], summary, NOW)[0][1].data;
+    detailWidgetRowsFor(["/employee-information"], summary, NOW)[0][1].data as
+      | { department: string; count: number }[]
+      | null;
 
   it("merges employees with no department into one Unassigned slice and drops empty ones", () => {
     expect(
@@ -142,6 +156,21 @@ describe("Department Distribution", () => {
       { department: "Sales", count: 4 },
       { department: "Unassigned", count: 3 },
     ]);
+  });
+
+  it("sums to Total Employee, putting employees missing from the counts into Unassigned", () => {
+    const got = slices({
+      totalEmployee: { regular: 8, probationary: 1, ojt: 1 },
+      departmentCounts: [
+        { department: "Sales", count: 4 },
+        { department: null, count: 2 },
+      ],
+    })!;
+    expect(got).toEqual([
+      { department: "Sales", count: 4 },
+      { department: "Unassigned", count: 6 },
+    ]);
+    expect(got.reduce((sum, s) => sum + s.count, 0)).toBe(10);
   });
 
   it("is absent when no employee is counted", () => {
@@ -181,13 +210,10 @@ describe("Recent Activity", () => {
 });
 
 describe("Upcoming Events", () => {
-  const ev = (id: string, date: string, kind: "holiday" | "leave" = "holiday") => ({
-    id,
-    kind,
-    title: id,
-    date,
-    description: "",
-  });
+  const ev = (id: string, date: string, kind: "holiday" | "leave" = "holiday"): UpcomingEvent =>
+    kind === "leave"
+      ? { id, kind, status: "approved", title: id, date, description: "" }
+      : { id, kind, title: id, date, description: "" };
   const items = (summary: DashboardSummary) =>
     detailWidgetRowsFor(["/attendance"], summary, NOW)[0][0].data as { id: string }[] | null;
 
@@ -202,6 +228,11 @@ describe("Upcoming Events", () => {
       ],
     });
     expect(got!.map((e) => e.id)).toEqual(["today", "soon", "late"]);
+  });
+
+  it("excludes leave that is still pending", () => {
+    const pending: UpcomingEvent = { ...ev("p", "2026-10-30", "leave"), status: "pending" } as UpcomingEvent;
+    expect(items({ upcomingEvents: [pending, ev("ok", "2026-10-30", "leave")] })!.map((e) => e.id)).toEqual(["ok"]);
   });
 
   it("shows at most 10", () => {

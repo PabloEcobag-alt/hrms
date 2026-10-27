@@ -1,5 +1,6 @@
 import { KeySummaryCard } from "@/components/dashboard/key-summary-card";
 import { DetailWidget } from "@/components/dashboard/detail-widget";
+import { detailWidgetRowClass } from "@/components/dashboard/detail-widget-card";
 import { cardsFor, detailWidgetRowsFor } from "@/lib/dashboard";
 import { getShell, requireModule } from "@/lib/portal/staff";
 
@@ -33,7 +34,7 @@ export default async function Page() {
           {widgetRows.map((row) => (
             <div
               key={row[0].id}
-              className={row.length > 1 ? "grid gap-md lg:grid-cols-2" : "grid gap-md"}
+              className={detailWidgetRowClass(row.length)}
             >
               {row.map((widget) => (
                 <DetailWidget key={widget.id} {...widget} />

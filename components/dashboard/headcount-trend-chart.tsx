@@ -29,7 +29,7 @@ export function HeadcountTrendChart({ points }: { points: HeadcountPoint[] }) {
     else segments.push([{ i, total: p.total }]);
   });
 
-  const ticks = [lo, Math.round((lo + hi) / 2), hi];
+  const ticks = [...new Set([lo, Math.round((lo + hi) / 2), hi])];
   const summary = `Headcount over the last ${points.length} months`;
 
   return (

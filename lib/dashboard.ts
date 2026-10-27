@@ -27,14 +27,13 @@ export interface ActivityEvent {
   at: string;
 }
 
-export interface UpcomingEvent {
+export type UpcomingEvent = {
   id: string;
-  kind: "holiday" | "leave";
   title: string;
   /** "YYYY-MM-DD"; the start date for multi-day leave. */
   date: string;
   description: string;
-}
+} & ({ kind: "holiday" } | { kind: "leave"; status: "approved" | "pending" });
 
 export interface KeySummaryCard {
   label: string;
@@ -131,6 +130,7 @@ const TREND_MONTHS = 12;
 const ACTIVITY_LIMIT = 10;
 const EVENT_LIMIT = 10;
 const EVENT_WINDOW_DAYS = 30;
+const UNASSIGNED = "Unassigned";
 
 /** "YYYY-MM" of the month `offset` months from `now`'s; the Date constructor rolls the year over. */
 const monthKey = (now: Date, offset: number) => {
@@ -157,8 +157,15 @@ function departmentDistribution(summary: DashboardSummary): DepartmentSlice[] | 
   const byName = new Map<string, number>();
   for (const { department, count } of summary.departmentCounts ?? []) {
     if (count <= 0) continue;
-    const name = department ?? "Unassigned";
+    const name = department ?? UNASSIGNED;
     byName.set(name, (byName.get(name) ?? 0) + count);
+  }
+  // Slices must sum to Total Employee: anyone the counts miss has no department on record.
+  const t = summary.totalEmployee;
+  if (t && byName.size > 0) {
+    const counted = [...byName.values()].reduce((sum, c) => sum + c, 0);
+    const missing = t.regular + t.probationary + t.ojt - counted;
+    if (missing > 0) byName.set(UNASSIGNED, (byName.get(UNASSIGNED) ?? 0) + missing);
   }
   return byName.size > 0
     ? [...byName].map(([department, count]) => ({ department, count }))
@@ -182,6 +189,7 @@ function upcomingEvents(summary: DashboardSummary, now: Date): UpcomingEvent[] |
   const from = dayNumber(now);
   const day = (e: UpcomingEvent) => dayNumber(new Date(`${e.date}T00:00`));
   const items = (summary.upcomingEvents ?? [])
+    .filter((e) => e.kind === "holiday" || e.status === "approved")
     .filter((e) => day(e) >= from && day(e) <= from + EVENT_WINDOW_DAYS)
     .sort((a, b) => day(a) - day(b))
     .slice(0, EVENT_LIMIT);

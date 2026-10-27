@@ -1,4 +1,4 @@
-import { DETAIL_WIDGET_HEIGHT } from "@/components/dashboard/detail-widget-card";
+import { DETAIL_WIDGET_HEIGHT, detailWidgetRowClass } from "@/components/dashboard/detail-widget-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cardsFor, detailWidgetRowsFor } from "@/lib/dashboard";
 import { getShell } from "@/lib/portal/staff";
@@ -24,7 +24,7 @@ export default async function Loading() {
       {widgetRows.map((row) => (
         <div
           key={row[0].id}
-          className={row.length > 1 ? "grid gap-md lg:grid-cols-2" : "grid gap-md"}
+          className={detailWidgetRowClass(row.length)}
         >
           {row.map((widget) => (
             <Skeleton key={widget.id} className={`${DETAIL_WIDGET_HEIGHT} rounded-xl`} />
