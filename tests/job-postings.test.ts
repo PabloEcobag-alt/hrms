@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { jobPostingsFor } from "@/lib/job-postings";
+import { closeExpiredJobPostings, jobPostingsFor } from "@/lib/job-postings";
 import { FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, FakePortal, portalFetch } from "./fake-portal";
 
 const ada = { name: "Ada Okafor", username: "ada", email: "ada@example.test", role: "HR Officer" };
@@ -120,4 +120,110 @@ it("saves all fields and treats search text and caller-supplied status as data",
   expect(await postings.list({ search: "' OR TRUE --" })).toEqual([]);
   expect(await postings.editDraft(draft.id, { title: "", ...JSON.parse('{"status":"open"}') }))
     .toMatchObject({ title: "", status: "draft" });
+});
+
+const publishable = {
+  title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila",
+  description: "Hire Staff", deadline: new Date("2030-01-01T00:00:00Z"),
+};
+
+it("publishes a complete Draft into the shared Careers data and edits it immediately", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  expect(await postings.publish(draft.id)).toMatchObject({ status: "open", requirements: "" });
+  expect(await postings.editOpen(draft.id, { title: "Senior Recruiter" })).toMatchObject({ title: "Senior Recruiter", status: "open" });
+  expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ title: "Senior Recruiter", status: "open" });
+});
+
+it("names every missing publish field and leaves the Draft intact", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft({ title: "\u00a0\f" });
+  await expect(postings.publish(draft.id)).rejects.toMatchObject({ reason: "validation", fieldErrors: {
+    title: expect.any(String), department: expect.any(String), employmentType: expect.any(String),
+    location: expect.any(String), description: expect.any(String), deadline: expect.any(String),
+  } });
+  expect(await postings.read(draft.id)).toEqual(draft);
+});
+
+it.each([null, new Date("2000-01-01"), new Date()])("refuses publishing with deadline %s", async (deadline) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft({ ...publishable, deadline });
+  await expect(postings.publish(draft.id)).rejects.toMatchObject({ reason: "validation", fieldErrors: { deadline: expect.any(String) } });
+  expect(await postings.read(draft.id)).toMatchObject({ status: "draft" });
+});
+
+it.each(["close", "markFilled"] as const)("allows %s only from Open and keeps final statuses final", async (operation) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  await expect(postings[operation](draft.id)).rejects.toMatchObject({ reason: "not-open" });
+  await expect(postings.editOpen(draft.id, {})).rejects.toMatchObject({ reason: "not-open" });
+  await postings.publish(draft.id);
+  await expect(postings.publish(draft.id)).rejects.toMatchObject({ reason: "not-draft" });
+  expect(await postings[operation](draft.id)).toMatchObject({ status: operation === "close" ? "closed" : "filled" });
+  const final = await postings.read(draft.id);
+  for (const action of [() => postings.publish(draft.id), () => postings.close(draft.id),
+    () => postings.markFilled(draft.id), () => postings.editOpen(draft.id, { title: "Changed" }),
+    () => postings.editDraft(draft.id, {}), () => postings.deleteDraft(draft.id)]) {
+    await expect(action()).rejects.toBeDefined();
+  }
+  expect(await postings.read(draft.id)).toEqual(final);
+});
+
+it("refuses incomplete Open edits without changing shared data", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  const open = await postings.publish(draft.id);
+  for (const fields of [{ title: " " }, { department: "" }, { employmentType: "" },
+    { location: "" }, { description: "" }, { deadline: null }, { deadline: new Date("2000-01-01") },
+    { deadline: new Date("invalid") }]) {
+    await expect(postings.editOpen(draft.id, fields)).rejects.toMatchObject({ reason: "validation" });
+    expect(await postings.read(draft.id)).toEqual(open);
+  }
+  expect(await postings.editOpen(draft.id, { requirements: "", requiredDocuments: [], screeningCriteria: [] }))
+    .toMatchObject({ status: "open", requiredDocuments: [] });
+});
+
+it.each(["read", "list", "closeExpired"] as const)("moves expired Open postings to Closed on %s", async (operation) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  await postings.publish(draft.id);
+  // Simulate time passing at the database boundary; no shared database is used.
+  await db.query("UPDATE job_postings SET deadline = '2000-01-01' WHERE id = $1", [draft.id]);
+  if (operation === "read") await postings.read(draft.id);
+  else if (operation === "list") expect(await postings.list({ status: "closed" })).toMatchObject([{ id: draft.id, status: "closed" }]);
+  else await postings.closeExpired();
+  expect((await db.query("SELECT status FROM job_postings WHERE id = $1", [draft.id])).rows[0]).toEqual({ status: "closed" });
+  expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ status: "closed" });
+  expect(await postings.list({ status: "open" })).toEqual([]);
+  await expect(postings.markFilled(draft.id)).rejects.toMatchObject({ reason: "not-open" });
+});
+
+it("refuses missing postings and rechecks access on every lifecycle operation", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  for (const id of ["missing", draft.id]) {
+    for (const action of [() => postings.publish(id), () => postings.editOpen(id, {}),
+      () => postings.close(id), () => postings.markFilled(id)]) {
+      if (id === "missing") await expect(action()).rejects.toMatchObject({ reason: "not-found" });
+    }
+  }
+  for (const state of ["denied", "unavailable", "invalid"] as const) {
+    portal.unavailable = state === "unavailable";
+    const restricted = jobPostingsFor(state === "denied" ? portal.signIn(ada, ["Attendance"]) : state === "invalid" ? undefined : handle, db);
+    for (const action of [() => restricted.publish(draft.id), () => restricted.editOpen(draft.id, {}),
+      () => restricted.close(draft.id), () => restricted.markFilled(draft.id), () => restricted.closeExpired()]) {
+      await expect(action()).rejects.toMatchObject({ reason: state });
+    }
+  }
+});
+
+
+it("scheduled maintenance persists deadline closure without a Staff read", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  await postings.publish(draft.id);
+  await db.query("UPDATE job_postings SET deadline = '2000-01-01' WHERE id = $1", [draft.id]);
+  await closeExpiredJobPostings(db);
+  await closeExpiredJobPostings(db);
+  expect((await db.query("SELECT status FROM job_postings WHERE id = $1", [draft.id])).rows[0]).toEqual({ status: "closed" });
 });

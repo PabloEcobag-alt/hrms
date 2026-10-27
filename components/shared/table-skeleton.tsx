@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface TableSkeletonProps {
   /** Number of placeholder rows. */
   rows?: number;
+  showToolbar?: boolean;
   /** Number of placeholder columns. */
   columns?: number;
 }
@@ -14,7 +15,7 @@ interface TableSkeletonProps {
  * Renders a shimmering search bar, header row, and body rows so tables fade in
  * as skeletons instead of showing a spinner icon.
  */
-export function TableSkeleton({ rows = 8, columns = 5 }: TableSkeletonProps) {
+export function TableSkeleton({ rows = 8, columns = 5, showToolbar = true }: TableSkeletonProps) {
   return (
     <div
       className="animate-in fade-in duration-300 space-y-md"
@@ -23,10 +24,10 @@ export function TableSkeleton({ rows = 8, columns = 5 }: TableSkeletonProps) {
       data-testid="table-skeleton"
     >
       {/* Search / toolbar row */}
-      <div className="flex items-center justify-between gap-md">
+      {showToolbar && <div className="flex items-center justify-between gap-md">
         <Skeleton className="h-9 w-full max-w-[20rem] rounded-md" />
         <Skeleton className="h-9 w-24 rounded-md" />
-      </div>
+      </div>}
 
       {/* Header row */}
       <div className="flex items-center gap-md border-b border-border pb-sm">

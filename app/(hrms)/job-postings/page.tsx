@@ -105,9 +105,7 @@ async function Listing({ status, search }: { status?: JobPostingStatus; search?:
 
   return (
     <>
-      <Suspense>
-        <JobPostingFilters counts={counts} />
-      </Suspense>
+      <JobPostingFilters counts={counts}>
       <Card className="overflow-auto p-md">
         {postings.length === 0 ? (
           status || search ? (
@@ -129,6 +127,7 @@ async function Listing({ status, search }: { status?: JobPostingStatus; search?:
           <PostingsTable postings={postings} />
         )}
       </Card>
+      </JobPostingFilters>
     </>
   );
 }

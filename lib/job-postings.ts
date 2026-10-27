@@ -40,7 +40,7 @@ const database: PostingDatabase = {
 };
 
 export class JobPostingError extends Error {
-  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "not-draft") {
+  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "not-draft" | "not-open" | "validation", public readonly fieldErrors: Partial<Record<keyof JobPostingFields, string>> = {}) {
     super(`Job Posting: ${reason}`);
   }
 }
@@ -48,6 +48,20 @@ export class JobPostingError extends Error {
 const columns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
   screening_criteria AS "screeningCriteria", deadline, status, updated_at AS "updatedAt"`;
+
+/** Internal maintenance entry point; callers must authenticate the scheduled request. */
+export async function closeExpiredJobPostings(db: PostingDatabase = database): Promise<void> {
+  await db.query(`UPDATE public.job_postings SET status = 'closed', updated_at = clock_timestamp()
+    WHERE status = 'open' AND deadline <= clock_timestamp()`);
+}
+
+const fieldColumns = {
+  title: "title", department: "department", employmentType: "employment_type",
+  location: "location", description: "description", requirements: "requirements",
+  requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline",
+} as const;
+// ECMAScript trim whitespace, shared by SQL validation and field error reporting.
+const whitespace = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
 /** Server-side interface. Pass the opaque Portal session handle from the request.
  * Each operation asks the Portal anew, so revocation takes effect immediately.
@@ -63,7 +77,62 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     throw new JobPostingError(rows.length ? "not-draft" : "not-found");
   }
 
+  const expire = () => closeExpiredJobPostings(db);
+
+  async function change(id: string, status: "draft" | "open", fields: Partial<JobPostingFields>, target: JobPostingStatus) {
+    await authorize();
+    await expire();
+    if (fields.deadline && !Number.isFinite(fields.deadline.getTime())) {
+      throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
+    }
+    const names = fieldColumns;
+    const values: unknown[] = [id, status, target, whitespace];
+    const expressions: Record<string, string> = { ...names };
+    const updates = ["status = $3", "updated_at = clock_timestamp()"];
+    for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
+      if (fields[field] === undefined) continue;
+      const json = field === "requiredDocuments" || field === "screeningCriteria";
+      values.push(json ? JSON.stringify(fields[field]) : fields[field]);
+      const expression = `$${values.length}${json ? "::jsonb" : field === "deadline" ? "::timestamptz" : "::text"}`;
+      expressions[field] = expression;
+      updates.push(`${names[field]} = ${expression}`);
+    }
+    const required = ["title", "department", "employmentType", "location", "description"] as const;
+    // Validate the resulting row inside the write, including concurrent edits.
+    const validation = target === "open"
+      ? required.map((field) => `length(btrim(${expressions[field]}, $4::text)) > 0`)
+        .concat([`${expressions.deadline} > clock_timestamp()`]).join(" AND ")
+      : "TRUE";
+    const { rows } = await db.query<JobPosting>(
+      `UPDATE public.job_postings SET ${updates.join(", ")}
+       WHERE id = $1 AND status = $2 AND $4::text IS NOT NULL AND (${validation})
+         AND (status != 'open' OR deadline > clock_timestamp()) RETURNING ${columns}`, values,
+    );
+    if (rows[0]) return rows[0];
+    await expire();
+    const current = (await db.query<JobPosting>(`SELECT ${columns} FROM public.job_postings WHERE id = $1`, [id])).rows[0];
+    if (!current) throw new JobPostingError("not-found");
+    if (current.status !== status) throw new JobPostingError(status === "draft" ? "not-draft" : "not-open");
+    const candidate = { ...current, ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) };
+    const errors: Partial<Record<keyof JobPostingFields, string>> = {};
+    for (const field of required) {
+      if (!candidate[field].trim()) errors[field] = `${field} is required`;
+    }
+    if (!candidate.deadline || candidate.deadline.getTime() <= Date.now()) {
+      errors.deadline = "deadline must be a valid future date";
+    }
+    throw new JobPostingError("validation", errors);
+  }
+
   return {
+    publish: (id: string) => change(id, "draft", {}, "open"),
+    editOpen: (id: string, fields: Partial<JobPostingFields>) => change(id, "open", fields, "open"),
+    close: (id: string) => change(id, "open", {}, "closed"),
+    markFilled: (id: string) => change(id, "open", {}, "filled"),
+    async closeExpired(): Promise<void> {
+      await authorize();
+      await expire();
+    },
     async saveDraft(fields: Partial<JobPostingFields>): Promise<JobPosting> {
       await authorize();
       const { rows } = await db.query<JobPosting>(
@@ -80,11 +149,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
     async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
       await authorize();
-      const names = {
-        title: "title", department: "department", employmentType: "employment_type",
-        location: "location", description: "description", requirements: "requirements",
-        requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline",
-      } as const;
+      const names = fieldColumns;
       const values: unknown[] = [id];
       const updates: string[] = [];
       for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
@@ -110,6 +175,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
     async list(filters: { status?: JobPostingStatus; search?: string } = {}): Promise<JobPosting[]> {
       await authorize();
+      await expire();
       return (await db.query<JobPosting>(
         `SELECT ${columns} FROM public.job_postings
          WHERE ($1::text IS NULL OR status = $1)
@@ -120,6 +186,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
     async read(id: string): Promise<JobPosting | undefined> {
       await authorize();
+      await expire();
       return (await db.query<JobPosting>(`SELECT ${columns} FROM public.job_postings WHERE id = $1`, [id])).rows[0];
     },
   };
