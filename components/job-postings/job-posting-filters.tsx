@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { STATUS_FILTERS } from "@/lib/job-posting-view";
 
 /** Filter and search live in the URL, so the server renders exactly what the link says. */
-export function JobPostingFilters() {
+export function JobPostingFilters({ counts }: { counts: Record<string, number> }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -27,10 +27,14 @@ export function JobPostingFilters() {
   return (
     <div className="flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
       <Tabs value={params.get("status") ?? ""} onValueChange={(status) => update({ status })}>
-        <TabsList>
+        <TabsList className="h-auto gap-xs bg-transparent p-0">
           {STATUS_FILTERS.map((filter) => (
-            <TabsTrigger key={filter.value} value={filter.value}>
-              {filter.label}
+            <TabsTrigger
+              key={filter.value}
+              value={filter.value}
+              className="px-md py-sm data-[state=active]:bg-accent data-[state=active]:text-primary data-[state=active]:shadow-none"
+            >
+              {filter.label} {counts[filter.value] ?? 0}
             </TabsTrigger>
           ))}
         </TabsList>

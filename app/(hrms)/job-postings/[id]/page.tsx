@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { canDelete } from "@/lib/job-posting-view";
@@ -15,8 +17,14 @@ export default async function Page({ params }: PageProps<"/job-postings/[id]">) 
   if (!canDelete(posting.status)) redirect("/job-postings");
 
   return (
-    <div className="flex flex-col gap-lg p-md sm:p-lg">
-      <h1 className="text-headline-md">Edit Draft</h1>
+    <div className="flex flex-col gap-md p-md sm:p-lg">
+      <div>
+        <Link href="/job-postings" className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" /> Job Postings
+        </Link>
+        <h1 className="text-headline-md">Edit Job Posting</h1>
+        <p className="text-body-sm text-muted-foreground">This Job Posting is a Draft, so it is still hidden from Careers.</p>
+      </div>
       <JobPostingForm
         posting={posting}
         action={updateDraft.bind(null, id)}
