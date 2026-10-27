@@ -42,7 +42,7 @@ describe("Key Summary Cards", () => {
       openPositions: { openRequisitions: 12, targetHires: 20 },
       pendingLeaves: { total: 0 },
     });
-    expect(cards.map((c) => c.figure)).toEqual(["0", "4", "12 open / 20 target", null, "0"]);
+    expect(cards.map((c) => c.figure)).toEqual([null, "4", "12 open / 20 target", null, "0"]);
   });
 
   it("round Attendance Rate to a whole percent", () => {
