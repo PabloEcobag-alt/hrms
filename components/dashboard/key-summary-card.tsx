@@ -3,7 +3,7 @@ import type { KeySummaryCard as KeySummaryCardData } from "@/lib/dashboard";
 
 export function KeySummaryCard({ label, figure }: KeySummaryCardData) {
   return (
-    <Card>
+    <Card className="h-32">
       <CardHeader>
         <CardDescription>{label}</CardDescription>
       </CardHeader>
