@@ -1,35 +1,70 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
-import { canDelete } from "@/lib/job-posting-view";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
-import { removeDraft, updateDraft } from "../actions";
+import {
+  closePosting,
+  fillPosting,
+  removeDraft,
+  updateDraft,
+  updateOpen,
+} from "../actions";
 
-export default async function Page({ params }: PageProps<"/job-postings/[id]">) {
+const INTRO = {
+  draft: "This Job Posting is a Draft, so it is still hidden from Careers.",
+  open: "This Job Posting is Open and visible on Careers.",
+  closed:
+    "This Job Posting is Closed. It can no longer be changed or reopened.",
+  filled:
+    "This Job Posting is Filled. It can no longer be changed or reopened.",
+} as const;
+
+export default async function Page({
+  params,
+}: PageProps<"/job-postings/[id]">) {
   await requireModule("Recruitment and Hiring");
   const { id } = await params;
   const posting = await (await postingsForRequest()).read(id);
 
   if (!posting) notFound();
-  // Only a Draft can be edited here; anything else goes back to the list.
-  if (!canDelete(posting.status)) redirect("/job-postings");
 
   return (
     <div className="flex flex-col gap-md p-md sm:p-lg">
       <div>
-        <Link href="/job-postings" className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground">
+        <Link
+          href="/job-postings"
+          className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground"
+        >
           <ChevronLeft className="h-4 w-4" /> Job Postings
         </Link>
-        <h1 className="text-headline-md">Edit Job Posting</h1>
-        <p className="text-body-sm text-muted-foreground">This Job Posting is a Draft, so it is still hidden from Careers.</p>
+        <h1 className="text-headline-md">
+          {posting.status === "draft" ? "Edit Job Posting" : posting.title}
+        </h1>
+        <p className="text-body-sm text-muted-foreground">
+          {INTRO[posting.status]}
+        </p>
       </div>
-      <JobPostingForm
-        posting={posting}
-        action={updateDraft.bind(null, id)}
-        deleteAction={removeDraft.bind(null, id)}
-      />
+      {posting.status === "draft" && (
+        <JobPostingForm
+          posting={posting}
+          action={updateDraft.bind(null, id)}
+          deleteAction={removeDraft.bind(null, id)}
+          canPublish
+        />
+      )}
+      {posting.status === "open" && (
+        <JobPostingForm
+          posting={posting}
+          action={updateOpen.bind(null, id)}
+          closeAction={closePosting.bind(null, id)}
+          fillAction={fillPosting.bind(null, id)}
+        />
+      )}
+      {(posting.status === "closed" || posting.status === "filled") && (
+        <JobPostingForm posting={posting} readOnly />
+      )}
     </div>
   );
 }

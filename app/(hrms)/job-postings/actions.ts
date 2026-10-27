@@ -3,17 +3,17 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { fieldsFromForm } from "@/lib/job-posting-form";
-import { JobPostingError, type jobPostingsFor } from "@/lib/job-postings";
+import { JobPostingError, type JobPostingFields, type jobPostingsFor } from "@/lib/job-postings";
 import { LOGIN_PATH, NO_ACCESS_PATH } from "@/lib/portal/config";
 import { postingsForRequest } from "@/lib/portal/postings";
 
-export type FormState = { error?: string };
+export type FormState = { error?: string; fieldErrors?: Partial<Record<keyof JobPostingFields, string>> };
 
 const MESSAGES = {
   unavailable: "HRMS could not reach the Portal or database. Please try again in a moment.",
   "not-found": "This Job Posting no longer exists.",
   "not-open": "Only an Open Job Posting can be changed here.",
-  validation: "Complete all required fields and use a future deadline.",
+  validation: "Complete the highlighted fields.",
   "not-draft": "Only a Draft can be changed here.",
   invalid: "",
   denied: "",
@@ -27,9 +27,11 @@ async function run(operation: (postings: ReturnType<typeof jobPostingsFor>) => P
     if (!(error instanceof JobPostingError)) throw error;
     if (error.reason === "denied") redirect(NO_ACCESS_PATH);
     if (error.reason === "invalid") redirect(LOGIN_PATH);
-    return { error: MESSAGES[error.reason] };
+    // The saved edits are what the page should now show, not the stale copy.
+    revalidatePath("/job-postings", "layout");
+    return { error: MESSAGES[error.reason], fieldErrors: error.fieldErrors };
   }
-  revalidatePath("/job-postings");
+  revalidatePath("/job-postings", "layout");
   redirect("/job-postings");
 }
 
@@ -38,7 +40,23 @@ export async function createDraft(_: FormState, data: FormData): Promise<FormSta
 }
 
 export async function updateDraft(id: string, _: FormState, data: FormData): Promise<FormState> {
-  return run((postings) => postings.editDraft(id, fieldsFromForm(data)));
+  const publish = data.get("intent") === "publish";
+  return run(async (postings) => {
+    await postings.editDraft(id, fieldsFromForm(data));
+    if (publish) await postings.publish(id);
+  });
+}
+
+export async function updateOpen(id: string, _: FormState, data: FormData): Promise<FormState> {
+  return run((postings) => postings.editOpen(id, fieldsFromForm(data)));
+}
+
+export async function closePosting(id: string): Promise<FormState> {
+  return run((postings) => postings.close(id));
+}
+
+export async function fillPosting(id: string): Promise<FormState> {
+  return run((postings) => postings.markFilled(id));
 }
 
 export async function removeDraft(id: string): Promise<FormState> {
