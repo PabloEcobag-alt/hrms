@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardsFor, widgetRowsFor, type DashboardSummary } from "@/lib/dashboard";
+import { cardsFor, detailWidgetRowsFor, type DashboardSummary } from "@/lib/dashboard";
 
 const ALL = ["/dashboard", "/attendance", "/employee-information", "/recruitment-and-hiring"];
 
@@ -60,9 +60,9 @@ describe("Key Summary Cards", () => {
 
 const NOW = new Date(2026, 9, 27, 12); // 27 Oct 2026
 
-describe("Widgets", () => {
+describe("Detail Widgets", () => {
   const names = (pages: string[], summary: DashboardSummary = {}) =>
-    widgetRowsFor(pages, summary, NOW).map((row) => row.map((w) => w.label));
+    detailWidgetRowsFor(pages, summary, NOW).map((row) => row.map((w) => w.label));
 
   it("are laid out two per row in fixed order", () => {
     expect(names(ALL)).toEqual([
@@ -71,7 +71,7 @@ describe("Widgets", () => {
     ]);
   });
 
-  it("only include Widgets whose Module is held, a lone Widget forming its own row", () => {
+  it("only include Detail Widgets whose Module is held, a lone Detail Widget forming its own row", () => {
     expect(names(["/attendance"])).toEqual([["Upcoming Events"]]);
     expect(names(["/employee-information"])).toEqual([
       ["Headcount Trend", "Department Distribution"],
@@ -84,13 +84,13 @@ describe("Widgets", () => {
   });
 
   it("have no data without a supply from their Module", () => {
-    expect(widgetRowsFor(ALL, {}, NOW).flat().map((w) => w.data)).toEqual([null, null, null, null]);
+    expect(detailWidgetRowsFor(ALL, {}, NOW).flat().map((w) => w.data)).toEqual([null, null, null, null]);
   });
 });
 
 describe("Headcount Trend", () => {
   const trend = (summary: DashboardSummary) =>
-    widgetRowsFor(["/employee-information"], summary, NOW)[0][0].data as
+    detailWidgetRowsFor(["/employee-information"], summary, NOW)[0][0].data as
       | { month: string; total: number | null }[]
       | null;
 
@@ -126,7 +126,7 @@ describe("Headcount Trend", () => {
 
 describe("Department Distribution", () => {
   const slices = (summary: DashboardSummary) =>
-    widgetRowsFor(["/employee-information"], summary, NOW)[0][1].data;
+    detailWidgetRowsFor(["/employee-information"], summary, NOW)[0][1].data;
 
   it("merges employees with no department into one Unassigned slice and drops empty ones", () => {
     expect(
@@ -160,7 +160,7 @@ describe("Recent Activity", () => {
     at,
   });
   const items = (summary: DashboardSummary) =>
-    widgetRowsFor(["/employee-information"], summary, NOW)[1][0].data as { id: string; ago: string }[] | null;
+    detailWidgetRowsFor(["/employee-information"], summary, NOW)[1][0].data as { id: string; ago: string }[] | null;
 
   it("lists the latest 10 newest first with relative times", () => {
     const events = Array.from({ length: 12 }, (_, i) =>
@@ -189,7 +189,7 @@ describe("Upcoming Events", () => {
     description: "",
   });
   const items = (summary: DashboardSummary) =>
-    widgetRowsFor(["/attendance"], summary, NOW)[0][0].data as { id: string }[] | null;
+    detailWidgetRowsFor(["/attendance"], summary, NOW)[0][0].data as { id: string }[] | null;
 
   it("keeps events in the next 30 days, soonest first", () => {
     const got = items({

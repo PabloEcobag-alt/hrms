@@ -1,12 +1,12 @@
-import { WIDGET_HEIGHT } from "@/components/dashboard/widget-card";
+import { DETAIL_WIDGET_HEIGHT } from "@/components/dashboard/detail-widget-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cardsFor, widgetRowsFor } from "@/lib/dashboard";
+import { cardsFor, detailWidgetRowsFor } from "@/lib/dashboard";
 import { getShell } from "@/lib/portal/staff";
 
 export default async function Loading() {
   const { permittedPages } = await getShell();
   const cards = cardsFor(permittedPages, {});
-  const widgetRows = widgetRowsFor(permittedPages, {}, new Date());
+  const widgetRows = detailWidgetRowsFor(permittedPages, {}, new Date());
 
   return (
     <div className="flex flex-col gap-lg p-md sm:p-lg">
@@ -27,7 +27,7 @@ export default async function Loading() {
           className={row.length > 1 ? "grid gap-md lg:grid-cols-2" : "grid gap-md"}
         >
           {row.map((widget) => (
-            <Skeleton key={widget.id} className={`${WIDGET_HEIGHT} rounded-xl`} />
+            <Skeleton key={widget.id} className={`${DETAIL_WIDGET_HEIGHT} rounded-xl`} />
           ))}
         </div>
       ))}

@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** Fixed height, shared with the loading skeleton so the page does not jump. */
-export const WIDGET_HEIGHT = "h-96";
+export const DETAIL_WIDGET_HEIGHT = "h-96";
 
-export function WidgetCard({
+export function DetailWidgetCard({
   title,
   empty,
   children,
@@ -15,7 +15,7 @@ export function WidgetCard({
   children: ReactNode;
 }) {
   return (
-    <Card className={`${WIDGET_HEIGHT} flex flex-col`}>
+    <Card className={`${DETAIL_WIDGET_HEIGHT} flex flex-col`}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>

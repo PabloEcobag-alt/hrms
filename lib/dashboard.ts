@@ -115,8 +115,8 @@ export interface ActivityItem extends ActivityEvent {
   ago: string;
 }
 
-/** A Widget and the data it shows; `data` is null when its owning Module has none yet. */
-export type Widget = {
+/** A Detail Widget and the data it shows; `data` is null when its owning Module has none yet. */
+export type DetailWidget = {
   label: string;
   module: Module["name"];
 } & (
@@ -188,13 +188,13 @@ function upcomingEvents(summary: DashboardSummary, now: Date): UpcomingEvent[] |
   return items.length > 0 ? items : null;
 }
 
-interface WidgetSpec {
+interface DetailWidgetSpec {
   href: Module["href"];
-  build: (summary: DashboardSummary, now: Date) => Widget;
+  build: (summary: DashboardSummary, now: Date) => DetailWidget;
 }
 
 /** Fixed order; consecutive pairs form the rows of the Dashboard grid. */
-const WIDGETS: readonly WidgetSpec[] = [
+const DETAIL_WIDGETS: readonly DetailWidgetSpec[] = [
   {
     href: "/employee-information",
     build: (s, now) => ({
@@ -234,18 +234,18 @@ const WIDGETS: readonly WidgetSpec[] = [
 ];
 
 /**
- * The Widgets a Staff member sees, grouped into the two fixed grid rows (Headcount Trend |
- * Department Distribution, then Recent Activity | Upcoming Events). Widgets whose Module is not held
- * are dropped; a row left with one Widget spans the full width and an empty row disappears.
+ * The Detail Widgets a Staff member sees, grouped into the two fixed grid rows (Headcount Trend |
+ * Department Distribution, then Recent Activity | Upcoming Events). Detail Widgets whose Module is not held
+ * are dropped; a row left with one Detail Widget spans the full width and an empty row disappears.
  */
-export function widgetRowsFor(
+export function detailWidgetRowsFor(
   permittedPages: readonly string[],
   summary: DashboardSummary,
   now: Date,
-): Widget[][] {
-  const rows: Widget[][] = [];
-  for (let i = 0; i < WIDGETS.length; i += 2) {
-    const row = WIDGETS.slice(i, i + 2)
+): DetailWidget[][] {
+  const rows: DetailWidget[][] = [];
+  for (let i = 0; i < DETAIL_WIDGETS.length; i += 2) {
+    const row = DETAIL_WIDGETS.slice(i, i + 2)
       .filter((w) => permittedPages.includes(w.href))
       .map((w) => w.build(summary, now));
     if (row.length > 0) rows.push(row);

@@ -1,14 +1,14 @@
 import { KeySummaryCard } from "@/components/dashboard/key-summary-card";
-import { Widget } from "@/components/dashboard/widget";
-import { cardsFor, widgetRowsFor } from "@/lib/dashboard";
+import { DetailWidget } from "@/components/dashboard/detail-widget";
+import { cardsFor, detailWidgetRowsFor } from "@/lib/dashboard";
 import { getShell, requireModule } from "@/lib/portal/staff";
 
 export default async function Page() {
   const staff = await requireModule("Dashboard");
   const { permittedPages } = await getShell();
-  // No Module supplies summary data yet; each card and Widget fills in as its Module does.
+  // No Module supplies summary data yet; each card and Detail Widget fills in as its Module does.
   const cards = cardsFor(permittedPages, {});
-  const widgetRows = widgetRowsFor(permittedPages, {}, new Date());
+  const widgetRows = detailWidgetRowsFor(permittedPages, {}, new Date());
 
   return (
     <div className="flex flex-col gap-lg p-md sm:p-lg">
@@ -36,7 +36,7 @@ export default async function Page() {
               className={row.length > 1 ? "grid gap-md lg:grid-cols-2" : "grid gap-md"}
             >
               {row.map((widget) => (
-                <Widget key={widget.id} {...widget} />
+                <DetailWidget key={widget.id} {...widget} />
               ))}
             </div>
           ))}
