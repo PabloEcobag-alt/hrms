@@ -16,8 +16,26 @@ Portal, including reads. Invalid, denied and unavailable decisions fail closed.
 
 Drafts use lowercase `draft`, empty text/arrays for missing content and `null` for
 an absent deadline. `deadline: null`, empty strings and empty arrays clear fields.
-Status and id cannot be changed through field patches. Publish, Open edits, status
-transitions, templates, auditing and announcements belong to subsequent tickets.
+Status and id cannot be changed through field patches.
+
+Ticket #32 adds `publish(id)`, `editOpen(id, fields)`, `close(id)` and
+`markFilled(id)`. Publishing requires nonblank title, department, employment type,
+location and description plus a future deadline. Optional requirements and arrays
+may stay empty. Invalid publication or Open edits throw `JobPostingError` with
+reason `validation` and a `fieldErrors` entry for each invalid field. The SQL write
+validates the resulting row, so concurrent edits cannot bypass the requirements.
+
+Only Draft → Open → Closed or Filled is allowed. Open-only operations refuse
+other statuses with `not-open`; publish refuses them with `not-draft`. Missing
+postings return `not-found`. Open edits patch the shared Careers row immediately.
+Every operation rechecks Portal access; there is no approval step.
+
+Reads, lists and lifecycle mutations persist expired Open postings as Closed
+before proceeding. `closeExpired()` exposes the same authorized sweep for a
+scheduled caller. No scheduler is installed by this ticket: idle rows are persisted
+as Closed on the next module read/list/lifecycle operation. Careers must enforce
+its deadline predicate independently, so an idle expired row cannot accept an
+Application. Templates, auditing and announcements belong to subsequent tickets.
 
 ## Migration and deployment
 

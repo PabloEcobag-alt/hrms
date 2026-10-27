@@ -12,6 +12,8 @@ export type FormState = { error?: string };
 const MESSAGES = {
   unavailable: "HRMS could not reach the Portal or database. Please try again in a moment.",
   "not-found": "This Job Posting no longer exists.",
+  "not-open": "Only an Open Job Posting can be changed here.",
+  validation: "Complete all required fields and use a future deadline.",
   "not-draft": "Only a Draft can be changed here.",
   invalid: "",
   denied: "",

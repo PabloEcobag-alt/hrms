@@ -147,6 +147,12 @@
   --spacing-margin-desktop: 48px;
 }
 
+@layer base {
+  *, ::before, ::after, ::backdrop, ::file-selector-button {
+    border-color: var(--border);
+  }
+}
+
 body {
   background: var(--color-background);
   color: var(--color-foreground);
