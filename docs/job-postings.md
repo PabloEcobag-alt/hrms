@@ -32,8 +32,8 @@ Every operation rechecks Portal access; there is no approval step.
 
 Reads, lists and lifecycle mutations persist expired Open postings as Closed
 before proceeding. `closeExpired()` exposes the same authorized sweep for a
-scheduled caller. `vercel.json` schedules `/api/cron/job-postings` every minute
-(requires a Vercel plan supporting this frequency). Set `CRON_SECRET` in the
+scheduled caller. `vercel.json` schedules `/api/cron/job-postings` daily (the Hobby plan allows
+nothing more frequent; reads and lifecycle operations sweep expired postings too). Set `CRON_SECRET` in the
 production deployment; the endpoint refuses missing/incorrect bearer credentials.
 The scheduled caller uses the internal maintenance entry point, without a Staff
 session. Idle rows close on the next sweep; repeated sweeps are harmless. Careers must enforce
