@@ -19,3 +19,7 @@ _Avoid_: Permission, feature, section, page
 **Attendance**:
 The Module for employee attendance. Biometrics is not a separate Module and is not part of its name.
 _Avoid_: Attendance Biometrics, Biometrics
+
+## UI design reference
+
+The Figma file [Bren Raphael's CRM - Orders Prototype](https://www.figma.com/design/76nS6Pw2TXA6fWfUvTmzJ1/Bren-Raphael-s-CRM---Orders-Prototype?node-id=0-1&p=f&t=ZlW5bZYq2Dp1w315-0) is the reference for all UI design in HRMS. Always check it before building or changing any UI.
