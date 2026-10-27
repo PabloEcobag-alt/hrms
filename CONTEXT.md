@@ -27,3 +27,19 @@ _Avoid_: Tile, panel
 **Key Summary Card**:
 A kind of Widget that shows one headline figure at the top of the Dashboard. The Key Summary Cards are Total Employee, New Hire, Open Positions, Attendance Rate, and Pending Leaves.
 _Avoid_: KPI, stat tile
+
+**Detail Widget**:
+A kind of Widget that shows more than one headline figure, such as a chart or a list, below the Key Summary Cards. The Detail Widgets are Headcount Trend, Department Distribution, Recent Activity, and Upcoming Events. In the code, `Widget` on its own is not used; the Key Summary Cards and the Detail Widgets are separate types.
+_Avoid_: Panel, tile
+
+**Headcount Trend**:
+A kind of Widget, owned by Employee Information, that charts how the Total Employee figure changed over time.
+
+**Department Distribution**:
+A kind of Widget, owned by Employee Information, that shows how the company's employees split across departments.
+
+**Recent Activity**:
+A kind of Widget, owned by Employee Information, that lists the latest employee-record events such as hires, transfers and status changes. It does not draw on other Modules.
+
+**Upcoming Events**:
+A kind of Widget, owned by Attendance, that lists what is coming up such as approved leave and holidays. It does not draw on other Modules.
