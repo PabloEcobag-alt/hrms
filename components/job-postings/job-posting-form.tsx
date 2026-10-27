@@ -99,7 +99,7 @@ export function JobPostingForm({
   const errors = Object.fromEntries(
     Object.keys(state.fieldErrors ?? {}).map((field) => [
       field,
-      ERROR_TEXT[field] ?? "Required to publish.",
+      ERROR_TEXT[field] ?? "This field is required.",
     ]),
   ) as Record<string, string>;
   // Marks an input as invalid for assistive tech and styling.
@@ -171,6 +171,7 @@ export function JobPostingForm({
               <Input
                 id="deadline"
                 name="deadline"
+                {...invalid("deadline")}
                 type="date"
                 defaultValue={deadlineInputValue(posting?.deadline ?? null)}
               />
