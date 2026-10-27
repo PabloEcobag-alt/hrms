@@ -21,5 +21,9 @@ The Module for employee attendance. Biometrics is not a separate Module and is n
 _Avoid_: Attendance Biometrics, Biometrics
 
 **Widget**:
-A summary block on the Dashboard that belongs to exactly one Module and is shown only to Staff who hold that Module. Until its Module has data, a Widget shows the Module name, its purpose, a link into the Module, and "Nothing to show yet". The Dashboard has no Widget of its own.
-_Avoid_: Tile, panel, card
+A summary block on the Dashboard that belongs to exactly one Module and is shown only to Staff who hold that Module. Until its Module has data, a Widget shows "Nothing to show yet". The Dashboard has no Widget of its own.
+_Avoid_: Tile, panel
+
+**Key Summary Card**:
+A kind of Widget that shows one headline figure at the top of the Dashboard. The Key Summary Cards are Total Employee, New Hire, Open Positions, Attendance Rate, and Pending Leaves.
+_Avoid_: KPI, stat tile

@@ -1,26 +1,75 @@
-import { MODULES, type Module } from "@/lib/modules";
+import type { Module } from "@/lib/modules";
 
-const PURPOSES: Record<Module["name"], string> = {
-  Dashboard: "A summary of the Modules you can open.",
-  Attendance: "Employee attendance and time records.",
-  "Employee Information": "Employee records and details.",
-  "Payroll & ESS": "Payroll runs and employee self-service.",
-  "Recruitment and Hiring": "Job openings, applicants, and hiring.",
-  "User Management": "Staff accounts and their access.",
-};
-
-export interface Widget {
-  name: Module["name"];
-  href: Module["href"];
-  purpose: string;
+/** Data each owning Module supplies for its Key Summary Cards. Absent until the Module has data. */
+export interface DashboardSummary {
+  totalEmployee?: { regular: number; probationary: number; ojt: number };
+  newHire?: { count: number };
+  openPositions?: { openRequisitions: number; targetHires: number };
+  attendanceRate?: { present: number; expected: number };
+  pendingLeaves?: { total: number };
 }
 
+export interface KeySummaryCard {
+  label: string;
+  module: Module["name"];
+  /** The headline figure, or null when the owning Module has no data to show yet. */
+  figure: string | null;
+}
+
+interface CardSpec {
+  label: string;
+  module: Module["name"];
+  href: Module["href"];
+  figure: (summary: DashboardSummary) => string | null;
+}
+
+const CARDS: readonly CardSpec[] = [
+  {
+    label: "Total Employee",
+    module: "Employee Information",
+    href: "/employee-information",
+    figure: ({ totalEmployee: d }) =>
+      d ? String(d.regular + d.probationary + d.ojt) : null,
+  },
+  {
+    label: "New Hire",
+    module: "Employee Information",
+    href: "/employee-information",
+    figure: ({ newHire: d }) => (d ? String(d.count) : null),
+  },
+  {
+    label: "Open Positions",
+    module: "Recruitment and Hiring",
+    href: "/recruitment-and-hiring",
+    figure: ({ openPositions: d }) =>
+      d ? `${d.openRequisitions} open / ${d.targetHires} target` : null,
+  },
+  {
+    label: "Attendance Rate",
+    module: "Attendance",
+    href: "/attendance",
+    figure: ({ attendanceRate: d }) =>
+      d && d.expected > 0 ? `${Math.round((d.present / d.expected) * 100)}%` : null,
+  },
+  {
+    label: "Pending Leaves",
+    module: "Attendance",
+    href: "/attendance",
+    figure: ({ pendingLeaves: d }) => (d ? String(d.total) : null),
+  },
+];
+
 /**
- * The Widgets a Staff member sees: one per Module they hold, in Module order. The Dashboard has
- * no Widget of its own. Unknown addresses are ignored, so only real Modules can produce one.
+ * The Key Summary Cards a Staff member sees, in fixed order: one per card whose owning Module they
+ * hold. Unknown addresses are ignored, so only real Modules can produce a card.
  */
-export function widgetsFor(permittedPages: readonly string[]): Widget[] {
-  return MODULES.filter(
-    (m) => m.name !== "Dashboard" && permittedPages.includes(m.href),
-  ).map((m) => ({ name: m.name, href: m.href, purpose: PURPOSES[m.name] }));
+export function cardsFor(
+  permittedPages: readonly string[],
+  summary: DashboardSummary,
+): KeySummaryCard[] {
+  return CARDS.filter((c) => permittedPages.includes(c.href)).map((c) => ({
+    label: c.label,
+    module: c.module,
+    figure: c.figure(summary),
+  }));
 }
