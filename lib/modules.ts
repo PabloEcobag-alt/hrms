@@ -4,7 +4,7 @@ export const MODULES = [
   { name: "Attendance", href: "/attendance" },
   { name: "Employee Information", href: "/employee-information" },
   { name: "Payroll & ESS", href: "/payroll-ess" },
-  { name: "Recruitment and Hiring", href: "/recruitment-and-hiring" },
+  { name: "Recruitment and Hiring", href: "/job-postings" },
   { name: "User Management", href: "/user-management" },
 ] as const;
 

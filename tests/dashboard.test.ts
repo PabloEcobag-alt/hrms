@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cardsFor, detailWidgetRowsFor, type DashboardSummary, type UpcomingEvent } from "@/lib/dashboard";
 
-const ALL = ["/dashboard", "/attendance", "/employee-information", "/recruitment-and-hiring"];
+const ALL = ["/dashboard", "/attendance", "/employee-information", "/job-postings"];
 
 const labels = (pages: string[], summary: DashboardSummary = {}) =>
   cardsFor(pages, summary).map((c) => c.label);
@@ -20,7 +20,7 @@ describe("Key Summary Cards", () => {
   it("only include cards whose Module is held", () => {
     expect(labels(["/attendance"])).toEqual(["Attendance Rate", "Pending Leaves"]);
     expect(labels(["/employee-information"])).toEqual(["Total Employee", "New Hire"]);
-    expect(labels(["/recruitment-and-hiring"])).toEqual(["Open Positions"]);
+    expect(labels(["/job-postings"])).toEqual(["Open Positions"]);
   });
 
   it("are empty when none of the owning Modules is held, ignoring unknown addresses", () => {
@@ -80,7 +80,7 @@ describe("Detail Widgets", () => {
   });
 
   it("are absent when neither Module is held", () => {
-    expect(names(["/dashboard", "/recruitment-and-hiring", "/nope"])).toEqual([]);
+    expect(names(["/dashboard", "/job-postings", "/nope"])).toEqual([]);
   });
 
   it("have no data without a supply from their Module", () => {

@@ -66,7 +66,7 @@ const CARDS: readonly CardSpec[] = [
   {
     label: "Open Positions",
     module: "Recruitment and Hiring",
-    href: "/recruitment-and-hiring",
+    href: "/job-postings",
     figure: ({ openPositions: d }) =>
       d ? `${d.openRequisitions} open / ${d.targetHires} target` : null,
   },
