@@ -2,24 +2,22 @@ import {
   Building2,
   CalendarCheck,
   CreditCard,
+  BadgeCheck,
+  Briefcase,
+  FileText,
+  CalendarClock,
+  UserSearch,
   LayoutDashboard,
   LayoutGrid,
   ShoppingCart,
   Truck,
   UserCog,
-  UserPlus,
   Users,
   Users2,
   WalletCards,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { MODULES } from "@/lib/modules";
-
-export interface NavItem {
-  name: string;
-  href: string;
-  icon: LucideIcon;
-}
+import { MODULES, type Module } from "@/lib/modules";
 
 export interface SystemItem {
   fullName: string;
@@ -31,21 +29,65 @@ export interface SystemItem {
 
 export type SystemChild = SystemItem;
 
-const MODULE_ICONS: Record<(typeof MODULES)[number]["name"], LucideIcon> = {
-  Dashboard: LayoutDashboard,
-  Attendance: CalendarCheck,
-  "Employee Information": Users,
-  "Payroll & ESS": WalletCards,
-  "Recruitment and Hiring": UserPlus,
-  "User Management": UserCog,
-};
+export interface NavItem {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  /** The Module whose access decision gates this tab and its page. */
+  module: Module["name"];
+}
 
-/** The sidebar, top to bottom: one tab per Module, in Module order. */
-export const sidebarItems: NavItem[] = MODULES.map((m) => ({
-  name: m.name,
-  href: m.href,
-  icon: MODULE_ICONS[m.name],
-}));
+export interface NavSection {
+  /** A visual label only; access is decided per tab. */
+  label?: string;
+  items: NavItem[];
+}
+
+/** The sidebar, top to bottom. */
+export const sidebarSections: NavSection[] = [
+  {
+    items: [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, module: "Dashboard" },
+    ],
+  },
+  {
+    label: "RECRUITMENT",
+    items: [
+      { name: "Job Postings", href: "/job-postings", icon: Briefcase, module: "Recruitment and Hiring" },
+      { name: "Applicants", href: "/applicants", icon: UserSearch, module: "Recruitment and Hiring" },
+    ],
+  },
+  {
+    label: "HIRING",
+    items: [
+      { name: "Interviews", href: "/interviews", icon: CalendarClock, module: "Recruitment and Hiring" },
+      { name: "Offers", href: "/offers", icon: FileText, module: "Recruitment and Hiring" },
+      { name: "Hired", href: "/hired", icon: BadgeCheck, module: "Recruitment and Hiring" },
+    ],
+  },
+  {
+    items: [
+      { name: "Attendance", href: "/attendance", icon: CalendarCheck, module: "Attendance" },
+      { name: "Employee Information", href: "/employee-information", icon: Users, module: "Employee Information" },
+      { name: "Payroll & ESS", href: "/payroll-ess", icon: WalletCards, module: "Payroll & ESS" },
+      { name: "User Management", href: "/user-management", icon: UserCog, module: "User Management" },
+    ],
+  },
+];
+
+/** The sections a Staff member sees, given the Module pages they may open; empty sections drop out. */
+export function sidebarFor(permittedPages: string[]): NavSection[] {
+  const permittedModules = new Set(
+    MODULES.filter((m) => permittedPages.includes(m.href)).map((m) => m.name),
+  );
+
+  return sidebarSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => permittedModules.has(item.module)),
+    }))
+    .filter((section) => section.items.length > 0);
+}
 
 export const systems: SystemItem[] = [
   {

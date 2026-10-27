@@ -9,13 +9,14 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { sidebarItems } from "./sidebar-nav";
+import { sidebarFor } from "./sidebar-nav";
 import { usePermittedPages } from "./staff-context";
 import { SidebarProfileFooter } from "./sidebar-profile-footer";
 import { SidebarNavSkeleton } from "./sidebar-nav-skeleton";
@@ -27,7 +28,7 @@ export function Sidebar() {
     useSidebar();
   const mounted = useMounted();
   const permittedPages = usePermittedPages();
-  const items = sidebarItems.filter((item) => permittedPages.includes(item.href));
+  const sections = sidebarFor(permittedPages);
 
   const isOpen = isMobile ? openMobile : open;
 
@@ -58,28 +59,37 @@ export function Sidebar() {
               {!mounted ? (
                 <SidebarNavSkeleton rows={1} />
               ) : (
-                <SidebarMenu className="gap-0.5">
-                  {items.map((item) => {
-                    const ItemIcon = item.icon;
-                    const { href } = item;
-                    const isActive = pathname === href || pathname.startsWith(href + "/");
+                sections.map((section, i) => (
+                  <div key={section.label ?? i} className={i > 0 ? "mt-3" : undefined}>
+                    {section.label && (
+                      <SidebarGroupLabel className="h-auto px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider text-sidebar-foreground/60">
+                        {section.label}
+                      </SidebarGroupLabel>
+                    )}
+                    <SidebarMenu className="gap-0.5">
+                      {section.items.map((item) => {
+                        const ItemIcon = item.icon;
+                        const { href } = item;
+                        const isActive = pathname === href || pathname.startsWith(href + "/");
 
-                    return (
-                      <SidebarMenuItem key={item.name}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={isActive}
-                          className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground transition-colors data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
-                        >
-                          <Link href={href} onClick={handleNavClick}>
-                            <ItemIcon className="size-[18px] shrink-0" />
-                            <span>{item.name}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
+                        return (
+                          <SidebarMenuItem key={item.name}>
+                            <SidebarMenuButton
+                              asChild
+                              isActive={isActive}
+                              className="h-auto w-full flex items-center gap-3 px-2.5 py-[9px] rounded-lg text-[15px] font-medium text-sidebar-foreground transition-colors data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
+                            >
+                              <Link href={href} onClick={handleNavClick}>
+                                <ItemIcon className="size-[18px] shrink-0" />
+                                <span>{item.name}</span>
+                              </Link>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </SidebarMenu>
+                  </div>
+                ))
               )}
             </SidebarGroupContent>
           </SidebarGroup>
