@@ -49,6 +49,20 @@ const columns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
   screening_criteria AS "screeningCriteria", deadline, status, updated_at AS "updatedAt"`;
 
+/** Internal maintenance entry point; callers must authenticate the scheduled request. */
+export async function closeExpiredJobPostings(db: PostingDatabase = database): Promise<void> {
+  await db.query(`UPDATE public.job_postings SET status = 'closed', updated_at = clock_timestamp()
+    WHERE status = 'open' AND deadline <= clock_timestamp()`);
+}
+
+const fieldColumns = {
+  title: "title", department: "department", employmentType: "employment_type",
+  location: "location", description: "description", requirements: "requirements",
+  requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline",
+} as const;
+// ECMAScript trim whitespace, shared by SQL validation and field error reporting.
+const whitespace = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
+
 /** Server-side interface. Pass the opaque Portal session handle from the request.
  * Each operation asks the Portal anew, so revocation takes effect immediately.
  */
@@ -63,10 +77,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     throw new JobPostingError(rows.length ? "not-draft" : "not-found");
   }
 
-  async function expire() {
-    await db.query(`UPDATE public.job_postings SET status = 'closed', updated_at = clock_timestamp()
-      WHERE status = 'open' AND deadline <= clock_timestamp()`);
-  }
+  const expire = () => closeExpiredJobPostings(db);
 
   async function change(id: string, status: "draft" | "open", fields: Partial<JobPostingFields>, target: JobPostingStatus) {
     await authorize();
@@ -74,12 +85,8 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     if (fields.deadline && !Number.isFinite(fields.deadline.getTime())) {
       throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
     }
-    const names = {
-      title: "title", department: "department", employmentType: "employment_type",
-      location: "location", description: "description", requirements: "requirements",
-      requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline",
-    } as const;
-    const values: unknown[] = [id, status, target];
+    const names = fieldColumns;
+    const values: unknown[] = [id, status, target, whitespace];
     const expressions: Record<string, string> = { ...names };
     const updates = ["status = $3", "updated_at = clock_timestamp()"];
     for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
@@ -93,12 +100,12 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     const required = ["title", "department", "employmentType", "location", "description"] as const;
     // Validate the resulting row inside the write, including concurrent edits.
     const validation = target === "open"
-      ? required.map((field) => `length(btrim(${expressions[field]}, E' \t\n\r')) > 0`)
+      ? required.map((field) => `length(btrim(${expressions[field]}, $4::text)) > 0`)
         .concat([`${expressions.deadline} > clock_timestamp()`]).join(" AND ")
       : "TRUE";
     const { rows } = await db.query<JobPosting>(
       `UPDATE public.job_postings SET ${updates.join(", ")}
-       WHERE id = $1 AND status = $2 AND (${validation})
+       WHERE id = $1 AND status = $2 AND $4::text IS NOT NULL AND (${validation})
          AND (status != 'open' OR deadline > clock_timestamp()) RETURNING ${columns}`, values,
     );
     if (rows[0]) return rows[0];
@@ -142,11 +149,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
     async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
       await authorize();
-      const names = {
-        title: "title", department: "department", employmentType: "employment_type",
-        location: "location", description: "description", requirements: "requirements",
-        requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline",
-      } as const;
+      const names = fieldColumns;
       const values: unknown[] = [id];
       const updates: string[] = [];
       for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {

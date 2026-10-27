@@ -32,8 +32,11 @@ Every operation rechecks Portal access; there is no approval step.
 
 Reads, lists and lifecycle mutations persist expired Open postings as Closed
 before proceeding. `closeExpired()` exposes the same authorized sweep for a
-scheduled caller. No scheduler is installed by this ticket: idle rows are persisted
-as Closed on the next module read/list/lifecycle operation. Careers must enforce
+scheduled caller. `vercel.json` schedules `/api/cron/job-postings` every minute
+(requires a Vercel plan supporting this frequency). Set `CRON_SECRET` in the
+production deployment; the endpoint refuses missing/incorrect bearer credentials.
+The scheduled caller uses the internal maintenance entry point, without a Staff
+session. Idle rows close on the next sweep; repeated sweeps are harmless. Careers must enforce
 its deadline predicate independently, so an idle expired row cannot accept an
 Application. Templates, auditing and announcements belong to subsequent tickets.
 

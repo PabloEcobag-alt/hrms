@@ -4,6 +4,8 @@ import { LOGIN_PATH, SESSION_COOKIE } from "@/lib/portal/config";
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  // The maintenance route authenticates its own scheduler bearer token.
+  if (pathname === "/api/cron/job-postings") return NextResponse.next();
   const returnTo = `${pathname}${search}`;
 
   if (!devBypassEnabled() && !request.cookies.get(SESSION_COOKIE)?.value) {

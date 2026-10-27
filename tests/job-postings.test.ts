@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { jobPostingsFor } from "@/lib/job-postings";
+import { closeExpiredJobPostings, jobPostingsFor } from "@/lib/job-postings";
 import { FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, FakePortal, portalFetch } from "./fake-portal";
 
 const ada = { name: "Ada Okafor", username: "ada", email: "ada@example.test", role: "HR Officer" };
@@ -137,7 +137,7 @@ it("publishes a complete Draft into the shared Careers data and edits it immedia
 
 it("names every missing publish field and leaves the Draft intact", async () => {
   const postings = jobPostingsFor(handle, db);
-  const draft = await postings.saveDraft({ title: " \t\n" });
+  const draft = await postings.saveDraft({ title: "\u00a0\f" });
   await expect(postings.publish(draft.id)).rejects.toMatchObject({ reason: "validation", fieldErrors: {
     title: expect.any(String), department: expect.any(String), employmentType: expect.any(String),
     location: expect.any(String), description: expect.any(String), deadline: expect.any(String),
@@ -190,7 +190,9 @@ it.each(["read", "list", "closeExpired"] as const)("moves expired Open postings 
   // Simulate time passing at the database boundary; no shared database is used.
   await db.query("UPDATE job_postings SET deadline = '2000-01-01' WHERE id = $1", [draft.id]);
   if (operation === "read") await postings.read(draft.id);
-  else await postings[operation]();
+  else if (operation === "list") expect(await postings.list({ status: "closed" })).toMatchObject([{ id: draft.id, status: "closed" }]);
+  else await postings.closeExpired();
+  expect((await db.query("SELECT status FROM job_postings WHERE id = $1", [draft.id])).rows[0]).toEqual({ status: "closed" });
   expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ status: "closed" });
   expect(await postings.list({ status: "open" })).toEqual([]);
   await expect(postings.markFilled(draft.id)).rejects.toMatchObject({ reason: "not-open" });
@@ -213,4 +215,15 @@ it("refuses missing postings and rechecks access on every lifecycle operation", 
       await expect(action()).rejects.toMatchObject({ reason: state });
     }
   }
+});
+
+
+it("scheduled maintenance persists deadline closure without a Staff read", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  await postings.publish(draft.id);
+  await db.query("UPDATE job_postings SET deadline = '2000-01-01' WHERE id = $1", [draft.id]);
+  await closeExpiredJobPostings(db);
+  await closeExpiredJobPostings(db);
+  expect((await db.query("SELECT status FROM job_postings WHERE id = $1", [draft.id])).rows[0]).toEqual({ status: "closed" });
 });
