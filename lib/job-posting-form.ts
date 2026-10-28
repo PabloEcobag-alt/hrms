@@ -9,8 +9,8 @@ const lines = (data: FormData, name: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-/** Visible form fields are sent; backend-only salary and work schedule stay omitted on edits. */
-export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "salaryFrom" | "salaryTo" | "workSchedule"> {
+/** Visible form fields are sent; the backend-only work schedule stays omitted on edits. */
+export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "workSchedule"> {
   const date = text(data, "deadline");
   // A deadline is the end of its chosen day.
   const deadline = date ? new Date(`${date}T23:59:59.999Z`) : null;
@@ -26,22 +26,26 @@ export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "salaryFr
     screeningCriteria: lines(data, "screeningCriteria"),
     deadline: deadline && !Number.isNaN(deadline.getTime()) ? deadline : null,
     openings: openingsFromForm(data),
+    salaryFrom: numberFromForm(data, "salaryFrom"),
+    salaryTo: numberFromForm(data, "salaryTo"),
   };
 }
 
-/** Blank means no openings set; anything else is sent as typed so the backend can reject it. */
-function openingsFromForm(data: FormData): number | null {
-  const value = text(data, "openings");
+/** Blank means unset; anything else is sent as typed so the backend can reject it. */
+function numberFromForm(data: FormData, name: string): number | null {
+  const value = text(data, name);
   return value ? Number(value) : null;
 }
+
+const openingsFromForm = (data: FormData) => numberFromForm(data, "openings");
 
 export function deadlineInputValue(deadline: Date | null): string {
   return deadline ? deadline.toISOString().slice(0, 10) : "";
 }
 
 /** A Job Template keeps everything except the deadline. */
-export function templateFieldsFromForm(data: FormData): Omit<JobTemplateFields, "salaryFrom" | "salaryTo" | "workSchedule"> {
+export function templateFieldsFromForm(data: FormData): Omit<JobTemplateFields, "workSchedule"> {
   const fields: Partial<JobPostingFields> = fieldsFromForm(data);
   delete fields.deadline;
-  return fields as Omit<JobTemplateFields, "salaryFrom" | "salaryTo" | "workSchedule">;
+  return fields as Omit<JobTemplateFields, "workSchedule">;
 }

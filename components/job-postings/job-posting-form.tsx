@@ -88,9 +88,40 @@ function Section({
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-sm text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring";
 
+function PesoInput({
+  name,
+  invalid,
+  defaultValue,
+}: {
+  name: string;
+  invalid: Record<string, unknown>;
+  defaultValue?: number | null;
+}) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute inset-y-0 left-sm flex items-center text-sm text-muted-foreground">
+        ₱
+      </span>
+      <Input
+        id={name}
+        name={name}
+        {...invalid}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="any"
+        className="pl-lg"
+        defaultValue={defaultValue ?? ""}
+      />
+    </div>
+  );
+}
+
 const ERROR_TEXT: Record<string, string> = {
   deadline: "Choose a deadline in the future.",
   openings: "Enter a whole number of 1 or more (up to 2,147,483,647).",
+  salaryFrom: "Enter a salary of 0 or more that is not above Salary to.",
+  salaryTo: "Enter a salary of 0 or more that is not below Salary from.",
 };
 
 export function JobPostingForm({
@@ -213,6 +244,22 @@ export function JobPostingForm({
               defaultValue={posting?.description}
             />
           </Field>
+        </Section>
+        <Section
+          title="Pay & schedule"
+          description="Optional. Monthly pay in pesos."
+        >
+          <div className="grid gap-md sm:grid-cols-2">
+            <Field name="salaryFrom" label="Salary from" error={errors.salaryFrom}>
+              <PesoInput name="salaryFrom" invalid={invalid("salaryFrom")} defaultValue={posting?.salaryFrom} />
+            </Field>
+            <Field name="salaryTo" label="Salary to" error={errors.salaryTo}>
+              <PesoInput name="salaryTo" invalid={invalid("salaryTo")} defaultValue={posting?.salaryTo} />
+            </Field>
+          </div>
+          <p className="text-body-sm text-muted-foreground">
+            Monthly. Leave blank to hide the salary on the careers page.
+          </p>
         </Section>
         <Section
           title="Requirements and screening"
