@@ -597,7 +597,10 @@ it.each([-1, NaN, Infinity, -Infinity, "20000", true])("rejects invalid salary b
 
 it("adds nullable salary bounds to existing Careers rows and safely reapplies constraints", async () => {
   await db.exec("ALTER TABLE job_postings DROP COLUMN salary_from, DROP COLUMN salary_to; ALTER TABLE job_templates DROP COLUMN salary_from, DROP COLUMN salary_to");
-  await db.exec("INSERT INTO job_postings (id) VALUES ('legacy-salary'); INSERT INTO job_templates (id) VALUES ('legacy-salary')");
+  await db.exec(`INSERT INTO job_postings
+    (id,title,department,description,requirements,employment_type,location,required_documents,screening_criteria,status)
+    VALUES ('legacy-salary','Existing role','','','','','','[]','[]','draft');
+    INSERT INTO job_templates (id) VALUES ('legacy-salary')`);
   const sql = await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8");
   await db.exec(sql);
   await db.exec(sql);
