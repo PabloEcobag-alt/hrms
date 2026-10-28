@@ -191,3 +191,79 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
   };
 }
+
+export type JobTemplateFields = Omit<JobPostingFields, "deadline">;
+export type JobTemplate = JobTemplateFields & { id: string; updatedAt: Date };
+
+export class JobTemplateError extends Error {
+  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found") {
+    super(`Job Template: ${reason}`);
+  }
+}
+
+const templateColumns = `id, title, department, employment_type AS "employmentType",
+  location, description, requirements, required_documents AS "requiredDocuments",
+  screening_criteria AS "screeningCriteria", updated_at AS "updatedAt"`;
+
+/** Explicit template saves only. Postings keep copied values, never a template id. */
+export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDatabase = database) {
+  async function authorize() {
+    const result = await accessFor(sessionHandle).check("Recruitment and Hiring");
+    if (result.decision !== "allowed") throw new JobTemplateError(result.decision);
+  }
+
+  return {
+    async create(fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
+      await authorize();
+      return (await db.query<JobTemplate>(
+        `INSERT INTO public.job_templates
+          (id, title, department, employment_type, location, description, requirements,
+           required_documents, screening_criteria)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb) RETURNING ${templateColumns}`,
+        [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
+          fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
+          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? [])],
+      )).rows[0];
+    },
+    async edit(id: string, fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
+      await authorize();
+      const values: unknown[] = [id];
+      const updates: string[] = [];
+      for (const field of Object.keys(fieldColumns) as (keyof JobPostingFields)[]) {
+        if (field === "deadline" || fields[field] === undefined) continue;
+        const json = field === "requiredDocuments" || field === "screeningCriteria";
+        values.push(json ? JSON.stringify(fields[field]) : fields[field]);
+        updates.push(`${fieldColumns[field]} = $${values.length}${json ? "::jsonb" : ""}`);
+      }
+      const sql = updates.length
+        ? `UPDATE public.job_templates SET ${updates.join(", ")}, updated_at = clock_timestamp()
+           WHERE id = $1 RETURNING ${templateColumns}`
+        : `SELECT ${templateColumns} FROM public.job_templates WHERE id = $1`;
+      const { rows } = await db.query<JobTemplate>(sql, values);
+      if (!rows[0]) throw new JobTemplateError("not-found");
+      return rows[0];
+    },
+    async delete(id: string): Promise<void> {
+      await authorize();
+      const { rows } = await db.query(`DELETE FROM public.job_templates WHERE id = $1 RETURNING id`, [id]);
+      if (!rows.length) throw new JobTemplateError("not-found");
+    },
+    async startPosting(id: string): Promise<JobPosting> {
+      await authorize();
+      const { rows } = await db.query<JobPosting>(
+        `INSERT INTO public.job_postings
+          (id, title, department, employment_type, location, description, requirements,
+           required_documents, screening_criteria, deadline, status)
+         SELECT $2, title, department, employment_type, location, description, requirements,
+           required_documents, screening_criteria, NULL, 'draft'
+         FROM public.job_templates WHERE id = $1 RETURNING ${columns}`, [id, randomUUID()],
+      );
+      if (!rows[0]) throw new JobTemplateError("not-found");
+      return rows[0];
+    },
+    async list(): Promise<JobTemplate[]> {
+      await authorize();
+      return (await db.query<JobTemplate>(`SELECT ${templateColumns} FROM public.job_templates ORDER BY updated_at DESC, id`)).rows;
+    },
+  };
+}
