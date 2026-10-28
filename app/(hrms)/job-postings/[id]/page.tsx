@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { notFound } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/job-posting-view";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
@@ -15,7 +17,7 @@ import {
 
 const INTRO = {
   draft: "This Job Posting is a Draft, so it is still hidden from Careers.",
-  open: "This Job Posting is Open and visible on Careers.",
+  open: "This Job Posting is Published and visible on Careers.",
   closed:
     "This Job Posting is Closed. It can no longer be changed or reopened.",
   filled:
@@ -40,9 +42,14 @@ export default async function Page({
         >
           <ChevronLeft className="h-4 w-4" /> Job Postings
         </Link>
-        <h1 className="text-headline-md">
-          {posting.status === "draft" ? "Edit Job Posting" : posting.title}
-        </h1>
+        <div className="flex items-center gap-sm">
+          <h1 className="text-headline-md">
+            {posting.status === "draft" ? "Edit Job Posting" : posting.title}
+          </h1>
+          <Badge variant={STATUS_BADGE[posting.status]}>
+            {STATUS_LABEL[posting.status]}
+          </Badge>
+        </div>
         <p className="text-body-sm text-muted-foreground">
           {INTRO[posting.status]}
         </p>

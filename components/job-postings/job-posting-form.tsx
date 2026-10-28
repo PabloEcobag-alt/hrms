@@ -127,7 +127,7 @@ export function JobPostingForm({
         )}
         <Section
           title="Role details"
-          description="What Applicants will see once this Job Posting is Open."
+          description="What Applicants will see once this Job Posting is Published."
         >
           <Field name="title" label="Title" error={errors.title}>
             <Input

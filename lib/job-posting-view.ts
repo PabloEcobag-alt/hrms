@@ -2,18 +2,32 @@ import type { JobPostingStatus } from "./job-postings";
 
 export const STATUS_FILTERS: { value: "" | JobPostingStatus; label: string }[] = [
   { value: "", label: "All" },
+  { value: "open", label: "Published" },
   { value: "draft", label: "Draft" },
-  { value: "open", label: "Open" },
   { value: "closed", label: "Closed" },
   { value: "filled", label: "Filled" },
 ];
 
 export const STATUS_LABEL: Record<JobPostingStatus, string> = {
   draft: "Draft",
-  open: "Open",
+  open: "Published",
   closed: "Closed",
   filled: "Filled",
 };
+
+export const STATUS_BADGE = {
+  draft: "secondary",
+  open: "success",
+  closed: "destructive",
+  filled: "info",
+} as const;
+
+/** Tab counts for the postings matching the current search; "" is All. */
+export function statusCounts(postings: { status: JobPostingStatus }[]): Record<"" | JobPostingStatus, number> {
+  const counts = { "": postings.length, draft: 0, open: 0, closed: 0, filled: 0 };
+  for (const posting of postings) counts[posting.status] += 1;
+  return counts;
+}
 
 /** An unknown status in the URL means no filter, never an error. */
 export function statusFromParam(value: string | undefined): JobPostingStatus | undefined {

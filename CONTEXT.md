@@ -21,8 +21,12 @@ The company's Applicant Tracking System, which is the Recruitment and Hiring Mod
 _Avoid_: ATS app, recruitment app
 
 **Job Posting**:
-One open role that Staff author in HR-ATS and Applicants see on the Careers site. It can be started from a Job Template or typed from scratch, and is Draft, Open, Closed or Filled. Only an Open Job Posting is visible on Careers. HRMS and Careers share one database, so a Job Posting is one record seen by both.
+One open role that Staff author in HR-ATS and Applicants see on the Careers site. It can be started from a Job Template or typed from scratch, and is Draft, Open, Closed or Filled. Staff see the Open status labelled "Published", and publishing a Draft is what makes it Open. Filled means the role was filled by a hire, and Closed means it ended otherwise (Staff closed it or its deadline passed). Only an Open Job Posting is visible on Careers. HRMS and Careers share one database, so a Job Posting is one record seen by both.
 _Avoid_: Job, listing, vacancy
+
+**Required Document**:
+A document an Applicant must upload to apply for a Job Posting. Staff tick from Resume or CV, Valid government ID and Health certificate, and can add their own, such as "NBI clearance". It is always a document; other hiring criteria are not Required Documents.
+_Avoid_: Application requirement, attachment
 
 **Job Template**:
 A saved, reusable role definition that Staff start Job Postings from. It exists only because Staff explicitly saved it; typing a Job Posting from scratch never creates one unless Staff choose "Save as template".
