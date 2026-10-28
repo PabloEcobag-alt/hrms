@@ -362,6 +362,7 @@ it("sends one Administrator-only Audit Event for each successful Staff action, n
       actor: { type: "staff", id: "ada", display_name: "Ada Okafor" }, customer_description: null,
       occurred_at: expect.any(String), idempotency_key: expect.any(String) });
   }
+  expect(auditRequests[2].metadata).toEqual({ applicants_notified: false });
   expect(auditRequests[0].target).toEqual({ type: "job_posting", id: draft.id, display_name: "Recruiter" });
   expect(auditRequests[10].target).toEqual({ type: "job_posting", id: copied.id, display_name: "Senior Recruiter" });
   expect(auditRequests[11].target).toEqual({ type: "job_template", id: template.id, display_name: "Senior Recruiter" });

@@ -15,6 +15,7 @@ export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, acti
     actor: { type: "staff", id: staff.username, display_name: staff.name },
     customer_description: null, occurred_at: new Date().toISOString(), idempotency_key: id,
     description: `${staff.name} performed ${action}.`,
+    ...(action === "job_posting.published" ? { metadata: { applicants_notified: false } } : {}),
   };
   const result = await db.query<T>(`WITH changed AS (${sql}), queued AS (
     INSERT INTO public.hrms_audit_outbox (id, payload)

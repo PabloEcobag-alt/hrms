@@ -52,5 +52,5 @@ The audit-logs deployment must register `job_posting.created`,
 `job_template.deleted` for Source HRMS. An older catalog rejects these requests;
 they remain queued until that service is updated. Draft deletion, views and
 scheduled deadline closure do not emit Staff action events. Applicant notification
-delivery belongs to ticket #35; publication auditing does not claim notification
-success before that integration exists.
+delivery is a separate part of parent ticket #28. Publication events explicitly
+record `applicants_notified: false` until that integration supplies a delivery result.
