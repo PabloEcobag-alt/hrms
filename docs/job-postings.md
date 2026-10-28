@@ -263,3 +263,26 @@ Careers owns the schema: its `0006_job_responsibilities_benefits.sql` migration
 (ticket #100) provides the JSONB columns with empty defaults. It must be applied
 before deploying this backend. No additional HRMS migration is needed. Job Template
 support and form inputs belong to #117 and #126 respectively.
+
+## Recover historical Audit Events (#129)
+
+The read-only preflight on 2026-10-28 found two attempted outbox rows. Both
+already use the new `job_template.*` actions. Their historical `staff` actor
+type is accepted by the audit service, and their actor id remains the username.
+No payload rewrite or schema migration is needed. Do not infer Portal user ids
+or replace the original `occurred_at` or `idempotency_key`.
+
+Use Node.js 24 or newer. Run `node scripts/recover-audit-outbox.mjs` to record
+the current count in a read-only transaction. After authorization for the target
+environment, run `node scripts/recover-audit-outbox.mjs --deliver` with
+`DATABASE_URL`, `API_GATEWAY_URL` and `API_GATEWAY_KEY` configured. It uses the
+existing audit-delivery boundary and does not run deadline or announcement work.
+The command attempts up to 50 due events; it reports a nonzero remaining count
+and exits unsuccessfully if any remain. Retry after their scheduled backoff,
+or finish existing announcement work first for publication events waiting on it.
+Successful sends delete their rows; failures retain the exact payload for retry.
+Rerunning against a drained outbox sends nothing.
+
+The parent spec excludes production database changes. The configured local
+`DATABASE_URL` was confirmed to point at the ATS production branch; draining
+that outbox requires explicit production authorization.

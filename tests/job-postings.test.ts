@@ -866,3 +866,54 @@ it("adds empty lists to existing Templates and can reapply the migration", async
   await db.exec(migration);
   expect(await jobTemplatesFor(handle, db).list()).toMatchObject([{ id: "legacy-lists", title: "Cashier", responsibilities: [], benefits: [] }]);
 });
+
+
+it("recovers legacy Audit Events with their original time, key and username only once", async () => {
+  const { retryJobPostingAuditDelivery } = await import("@/lib/job-postings");
+  const legacy = {
+    source: "HRMS", module: "Recruitment and Hiring", action: "job_template.created", outcome: "success",
+    actor: { type: "staff", id: "ada", display_name: "Ada Okafor" },
+    occurred_at: "2026-10-28T06:53:53.006Z", idempotency_key: "legacy-template-created",
+    description: "Ada Okafor performed job_template.created.", customer_description: null,
+    target: { type: "job_template", id: "template-1", display_name: "Recruiter" },
+  };
+  await db.query(`INSERT INTO hrms_audit_outbox (id, payload, attempts, next_attempt_at)
+    VALUES ($1, $2, 3, '2000-01-01')`, [legacy.idempotency_key, JSON.stringify(legacy)]);
+  await retryJobPostingAuditDelivery(db);
+  expect(auditRequests).toEqual([legacy]);
+  expect((await db.query("SELECT count(*)::int AS count FROM hrms_audit_outbox")).rows).toEqual([{ count: 0 }]);
+  await retryJobPostingAuditDelivery(db);
+  expect(auditRequests).toHaveLength(1);
+});
+
+it("retains a recovered Audit Event after rejection without resetting its retry backoff", async () => {
+  const { retryJobPostingAuditDelivery } = await import("@/lib/job-postings");
+  const event = {
+    source: "HRMS", action: "job_template.updated", actor: { type: "staff", id: "ada" },
+    occurred_at: "2026-10-28T10:08:54.057Z", idempotency_key: "legacy-template-updated",
+  };
+  await db.query(`INSERT INTO hrms_audit_outbox (id, payload) VALUES ($1, $2)`,
+    [event.idempotency_key, JSON.stringify(event)]);
+  const boundary = fetch;
+  const rejected: unknown[] = [];
+  vi.stubGlobal("fetch", async (_input: unknown, init?: RequestInit) => {
+    rejected.push(JSON.parse(String(init?.body)));
+    return Response.json({ error: "unavailable" }, { status: 503 });
+  });
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await retryJobPostingAuditDelivery(db);
+    const retained = await db.query("SELECT * FROM hrms_audit_outbox");
+    expect(retained.rows).toHaveLength(1);
+      await retryJobPostingAuditDelivery(db);
+    expect((await db.query("SELECT * FROM hrms_audit_outbox")).rows).toEqual(retained.rows);
+    expect(rejected).toEqual([event]);
+    vi.stubGlobal("fetch", boundary);
+    await db.query("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    await retryJobPostingAuditDelivery(db);
+    expect(auditRequests).toEqual(rejected);
+    expect((await db.query("SELECT count(*)::int AS count FROM hrms_audit_outbox")).rows).toEqual([{ count: 0 }]);
+  } finally {
+    log.mockRestore();
+  }
+});
