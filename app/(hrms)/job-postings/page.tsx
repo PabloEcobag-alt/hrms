@@ -11,11 +11,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
-import { DeleteDraftButton } from "@/components/job-postings/delete-draft-button";
 import { Card } from "@/components/ui/card";
 import { JobPostingFilters } from "@/components/job-postings/job-posting-filters";
 import {
-  canDelete,
   STATUS_BADGE,
   STATUS_LABEL,
   statusCounts,
@@ -28,7 +26,6 @@ import {
 } from "@/lib/job-postings";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
-import { removeDraft } from "./actions";
 
 const formatDeadline = (deadline: Date | null) =>
   deadline
@@ -60,39 +57,35 @@ function PostingsTable({ postings }: { postings: JobPosting[] }) {
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead>Title</TableHead>
-          <TableHead>Department</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead>Job</TableHead>
+          <TableHead>Location</TableHead>
+          <TableHead>Type</TableHead>
           <TableHead>Deadline</TableHead>
-          <TableHead className="w-0" />
+          <TableHead>Status</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {postings.map((posting) => (
-          <TableRow key={posting.id}>
-            <TableCell className="font-medium text-primary">
+          <TableRow key={posting.id} className="relative">
+            <TableCell>
+              {/* One link per row: its ::after covers the whole row. */}
               <Link
                 href={`/job-postings/${posting.id}`}
-                className="hover:underline"
+                className="font-medium text-primary after:absolute after:inset-0 hover:underline"
               >
                 {titleOf(posting)}
               </Link>
+              <p className="text-body-sm text-muted-foreground">
+                {posting.department || "—"}
+              </p>
             </TableCell>
-            <TableCell>{posting.department || "—"}</TableCell>
+            <TableCell>{posting.location || "—"}</TableCell>
+            <TableCell>{posting.employmentType || "—"}</TableCell>
+            <TableCell>{formatDeadline(posting.deadline)}</TableCell>
             <TableCell>
               <Badge variant={STATUS_BADGE[posting.status]}>
                 {STATUS_LABEL[posting.status]}
               </Badge>
-            </TableCell>
-            <TableCell>{formatDeadline(posting.deadline)}</TableCell>
-            <TableCell>
-              {canDelete(posting.status) && (
-                <DeleteDraftButton
-                  compact
-                  title={titleOf(posting)}
-                  action={removeDraft.bind(null, posting.id)}
-                />
-              )}
             </TableCell>
           </TableRow>
         ))}
@@ -184,7 +177,7 @@ export default async function Page({
           </Button>
         </div>
       </div>
-      <Suspense fallback={<TableSkeleton columns={4} />}>
+      <Suspense fallback={<TableSkeleton columns={5} />}>
         <Listing
           status={statusFromParam(one(status))}
           search={one(q)?.trim() || undefined}
