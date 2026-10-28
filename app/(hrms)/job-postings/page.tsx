@@ -21,11 +21,13 @@ import {
 } from "@/lib/job-posting-view";
 import {
   JobPostingError,
+  JobTemplateError,
   type JobPosting,
   type JobPostingStatus,
 } from "@/lib/job-postings";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
+import { templatesForRequest } from "@/lib/portal/templates";
 
 const formatDeadline = (deadline: Date | null) =>
   deadline
@@ -121,6 +123,15 @@ async function Listing({
     ? matching.filter((posting) => posting.status === status)
     : matching;
 
+  // The hint is only useful once a template exists; a failed lookup just hides it.
+  const hasTemplates = await (await templatesForRequest())
+    .list()
+    .then((templates) => templates.length > 0)
+    .catch((error) => {
+      if (!(error instanceof JobTemplateError)) throw error;
+      return false;
+    });
+
   return (
     <>
       <JobPostingFilters counts={counts}>
@@ -146,6 +157,12 @@ async function Listing({
           )}
         </Card>
       </JobPostingFilters>
+      {hasTemplates && (
+        <p className="text-body-sm text-muted-foreground">
+          Start a new Job Posting from a saved Job Template with New Job
+          Posting, or manage them under Job Templates.
+        </p>
+      )}
     </>
   );
 }
