@@ -16,6 +16,7 @@ export type JobPostingFields = {
   requiredDocuments: string[];
   screeningCriteria: string[];
   deadline: Date | null;
+  openings: number | null;
 };
 export type JobPosting = JobPostingFields & {
   id: string;
@@ -53,7 +54,7 @@ export class JobPostingError extends Error {
 
 const columns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
-  screening_criteria AS "screeningCriteria", deadline, status, first_published_at AS "firstPublishedAt", updated_at AS "updatedAt"`;
+  screening_criteria AS "screeningCriteria", openings, deadline, status, first_published_at AS "firstPublishedAt", updated_at AS "updatedAt"`;
 
 /** Internal maintenance entry point; callers must authenticate the scheduled request. */
 export async function closeExpiredJobPostings(db: PostingDatabase = database): Promise<void> {
@@ -64,8 +65,20 @@ export async function closeExpiredJobPostings(db: PostingDatabase = database): P
 const fieldColumns = {
   title: "title", department: "department", employmentType: "employment_type",
   location: "location", description: "description", requirements: "requirements",
-  requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline",
+  requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline", openings: "openings",
 } as const;
+// Match the positive PostgreSQL integer range before sending values to the driver.
+function invalidOpenings(value: number | null | undefined): boolean {
+  return value !== undefined && value !== null &&
+    (!Number.isInteger(value) || value <= 0 || value > 2_147_483_647);
+}
+
+function validatePostingOpenings(fields: Partial<JobPostingFields>) {
+  if (invalidOpenings(fields.openings)) {
+    throw new JobPostingError("validation", { openings: "openings must be a positive integer" });
+  }
+}
+
 // ECMAScript trim whitespace, shared by SQL validation and field error reporting.
 const whitespace = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
@@ -88,6 +101,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
 
   async function change(id: string, status: "draft" | "open", fields: Partial<JobPostingFields>, target: JobPostingStatus) {
     const staff = await authorize();
+    validatePostingOpenings(fields);
     await expire();
     if (fields.deadline && !Number.isFinite(fields.deadline.getTime())) {
       throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
@@ -103,7 +117,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       if (fields[field] === undefined) continue;
       const json = field === "requiredDocuments" || field === "screeningCriteria";
       values.push(json ? JSON.stringify(fields[field]) : fields[field]);
-      const expression = `$${values.length}${json ? "::jsonb" : field === "deadline" ? "::timestamptz" : "::text"}`;
+      const expression = `$${values.length}${json ? "::jsonb" : field === "deadline" ? "::timestamptz" : field === "openings" ? "::integer" : "::text"}`;
       expressions[field] = expression;
       updates.push(`${names[field]} = ${expression}`);
     }
@@ -146,20 +160,22 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
     async saveDraft(fields: Partial<JobPostingFields>): Promise<JobPosting> {
       const staff = await authorize();
+      validatePostingOpenings(fields);
       const { rows } = await auditedMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, deadline, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,'draft') RETURNING ${columns}`,
+           required_documents, screening_criteria, openings, deadline, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'draft') RETURNING ${columns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
           JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
-          fields.deadline ?? null],
+          fields.openings ?? null, fields.deadline ?? null],
       );
       return rows[0];
     },
     async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
       const staff = await authorize();
+      validatePostingOpenings(fields);
       const names = fieldColumns;
       const values: unknown[] = [id];
       const updates: string[] = [];
@@ -214,14 +230,14 @@ export type JobTemplateFields = Omit<JobPostingFields, "deadline">;
 export type JobTemplate = JobTemplateFields & { id: string; updatedAt: Date };
 
 export class JobTemplateError extends Error {
-  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found") {
+  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "validation", public readonly fieldErrors: Partial<Record<keyof JobTemplateFields, string>> = {}) {
     super(`Job Template: ${reason}`);
   }
 }
 
 const templateColumns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
-  screening_criteria AS "screeningCriteria", updated_at AS "updatedAt"`;
+  screening_criteria AS "screeningCriteria", openings, updated_at AS "updatedAt"`;
 
 /** Explicit template saves only. Postings keep copied values, never a template id. */
 export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDatabase = database) {
@@ -234,18 +250,20 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
   return {
     async create(fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
       const staff = await authorize();
+      if (invalidOpenings(fields.openings)) throw new JobTemplateError("validation", { openings: "openings must be a positive integer" });
       return (await auditedMutation<JobTemplate>(db, staff, "job_template.created",
         `INSERT INTO public.job_templates
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb) RETURNING ${templateColumns}`,
+           required_documents, screening_criteria, openings)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10) RETURNING ${templateColumns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
-          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? [])],
+          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []), fields.openings ?? null],
       )).rows[0];
     },
     async edit(id: string, fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
       const staff = await authorize();
+      if (invalidOpenings(fields.openings)) throw new JobTemplateError("validation", { openings: "openings must be a positive integer" });
       const values: unknown[] = [id];
       const updates: string[] = [];
       for (const field of Object.keys(fieldColumns) as (keyof JobPostingFields)[]) {
@@ -272,9 +290,9 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       const { rows } = await auditedMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, deadline, status)
+           required_documents, screening_criteria, openings, deadline, status)
          SELECT $2, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, NULL, 'draft'
+           required_documents, screening_criteria, openings, NULL, 'draft'
          FROM public.job_templates WHERE id = $1 RETURNING ${columns}`, [id, randomUUID()],
       );
       if (!rows[0]) throw new JobTemplateError("not-found");
