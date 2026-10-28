@@ -145,8 +145,8 @@ export function JobPostingForm({
   ) as Record<string, string>;
   const sections = splitRequirements(posting?.requirements ?? "");
   // Marks an input as invalid for assistive tech and styling.
-  const invalid = (name: string) =>
-    errors[name]
+  const invalid = (name: string, errorKey = name) =>
+    errors[errorKey]
       ? { "aria-invalid": true, "aria-describedby": `${name}-error` }
       : {};
 
@@ -241,9 +241,7 @@ export function JobPostingForm({
             <Textarea
               id="summary"
               name="summary"
-              {...(errors.description
-                ? { "aria-invalid": true, "aria-describedby": "summary-error" }
-                : {})}
+              {...invalid("summary", "description")}
               rows={3}
               defaultValue={posting?.description}
             />
@@ -292,7 +290,7 @@ export function JobPostingForm({
         </Section>
         <Section
           title="Requirements and screening"
-          description="Optional. Shown to Applicants, who attach each required Document when they apply."
+          description="Optional. Applicants attach each required Document when they apply."
         >
           <Field
             name="requiredDocuments"
