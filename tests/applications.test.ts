@@ -28,7 +28,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await db.close();
+  if (!db.closed) await db.close();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
