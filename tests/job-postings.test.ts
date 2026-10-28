@@ -518,7 +518,10 @@ it("migrates existing rows to unspecified openings and safely reapplies", async 
     await legacy.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0001-job-posting-drafts.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8"));
-    await legacy.exec("INSERT INTO job_postings (id) VALUES ('existing'); INSERT INTO job_templates (id) VALUES ('existing')");
+    await legacy.exec(`INSERT INTO job_postings
+      (id,title,department,description,requirements,employment_type,location,required_documents,screening_criteria,status)
+      VALUES ('existing','Existing role','','','','','','[]','[]','draft');
+      INSERT INTO job_templates (id) VALUES ('existing')`);
     const sql = await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8");
     await legacy.exec(sql);
     await legacy.exec(sql);
