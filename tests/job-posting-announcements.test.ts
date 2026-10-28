@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { jobPostingsFor, retryJobPostingAnnouncements } from "@/lib/job-postings";
+import { jobPostingsFor, retryJobPostingAnnouncements, retryJobPostingAuditDelivery } from "@/lib/job-postings";
 import { FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, FakePortal, portalFetch } from "./fake-portal";
 
 let db: PGlite;
@@ -192,4 +192,61 @@ it.each(["rejected", "network"] as const)("retains a committed publish after %s 
     expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
     expect(await postings.read(posting.id)).toMatchObject({ status: "open" });
   } finally { log.mockRestore(); }
+});
+
+
+it.each([
+  ["close", "closed", "job_posting.closed"],
+  ["markFilled", "filled", "job_posting.filled"],
+] as const)("queues %s with its own action and clears the outbox on acceptance", async (method, status, action) => {
+  const postings = jobPostingsFor(handle, db);
+  const posting = await postings.createAndPublish({ title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") });
+  await retryJobPostingAnnouncements(db);
+  sends = [];
+  auditFailure = "rejected";
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    expect(await postings[method](posting.id)).toMatchObject({ status });
+    expect(await jobPostingsFor(handle, db).read(posting.id)).toMatchObject({ status });
+    expect(sends).toHaveLength(1);
+    const attempt = sends[0];
+    expect(attempt.path).toBe("/audit/events");
+    expect(attempt.body).toMatchObject({
+      source: "HRMS", module: "Recruitment and Hiring", action, outcome: "success",
+      actor: { type: "staff", id: "ada", display_name: "Ada" },
+      target: { type: "job_posting", id: posting.id, display_name: "Recruiter" },
+      idempotency_key: expect.any(String),
+    });
+    expect(attempt.body).not.toHaveProperty("metadata");
+    expect((await db.query("SELECT id, payload, attempts FROM hrms_audit_outbox")).rows).toEqual([
+      { id: attempt.body.idempotency_key, payload: attempt.body, attempts: 1 },
+    ]);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt]);
+    auditFailure = undefined;
+    await db.exec("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt, attempt]);
+    expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+    await retryJobPostingAuditDelivery(db);
+    await expect(postings[method](posting.id)).rejects.toMatchObject({ reason: "not-open" });
+    expect(sends).toEqual([attempt, attempt]);
+    expect(await postings.read(posting.id)).toMatchObject({ status });
+  } finally { log.mockRestore(); }
+});
+
+it.each([
+  ["close", "job_posting.closed"],
+  ["markFilled", "job_posting.filled"],
+] as const)("delivers %s immediately when the audit gateway accepts it", async (method, action) => {
+  const postings = jobPostingsFor(handle, db);
+  const posting = await postings.createAndPublish({ title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") });
+  await retryJobPostingAnnouncements(db);
+  sends = [];
+  await postings[method](posting.id);
+  expect(sends).toHaveLength(1);
+  expect(sends[0]).toMatchObject({ path: "/audit/events", body: { action } });
+  expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+  await retryJobPostingAuditDelivery(db);
+  expect(sends).toHaveLength(1);
 });
