@@ -46,10 +46,10 @@ async function seed(index: number, status = "Received", postingStatus = "open", 
 
 it("returns Application identity, Job Posting and applied date through the authorised module", async () => {
   const id = await seed(1);
-  expect(await applicationsFor(handle, db).list()).toEqual({
+  expect(await applicationsFor(handle, db).list()).toMatchObject({
     rows: [{ id, applicantName: "Applicant 1", applicantEmail: "person1@example.test", jobPostingId: "posting-1",
       jobPostingTitle: "Cashier", location: "Manila", appliedAt: new Date("2026-10-01T08:00:00Z"), stage: "New", nextStep: "Review application" }],
-    total: 1, page: 1, pageSize: 25,
+    total: 1, page: 1, pageSize: 25, stageCounts: { All: 1, New: 1, Screening: 0, Interview: 0, Offer: 0, Hired: 0, Rejected: 0 },
   });
 });
 
@@ -73,11 +73,12 @@ it("pages newest applied first with stable ties, a total and empty out-of-range 
   const second = await applications.list({ page: 2 });
   expect(second).toMatchObject({ total: 27, page: 2, pageSize: 25 });
   expect(second.rows.map((row) => row.applicantName)).toEqual(["Applicant 2", "Applicant 1"]);
-  expect(await applications.list({ page: 3 })).toEqual({ rows: [], total: 27, page: 3, pageSize: 25 });
+  expect(await applications.list({ page: 3 })).toMatchObject({ rows: [], total: 27, page: 3, pageSize: 25 });
 });
 
 it("returns an empty first page when no Applications exist", async () => {
-  expect(await applicationsFor(handle, db).list()).toEqual({ rows: [], total: 0, page: 1, pageSize: 25 });
+  expect(await applicationsFor(handle, db).list()).toEqual({ rows: [], total: 0, page: 1, pageSize: 25, newThisWeek: 0,
+    stageCounts: { All: 0, New: 0, Screening: 0, Interview: 0, Offer: 0, Hired: 0, Rejected: 0 } });
 });
 
 it.each(["denied", "invalid", "unavailable"] as const)("fails closed on %s without touching the database", async (reason) => {
@@ -108,4 +109,64 @@ it("can reapply the HRMS read projection without changing Careers Applications",
   const before = await applicationsFor(handle, db).list();
   await db.exec(await readFile(new URL("../migrations/0011-applications-list.sql", import.meta.url), "utf8"));
   expect(await applicationsFor(handle, db).list()).toEqual(before);
+});
+
+it("filters by Stage while All retains Withdrawn Applications", async () => {
+  await seed(1, "Received");
+  await seed(2, "Screening");
+  await seed(3, "Withdrawn");
+  const applications = applicationsFor(handle, db);
+  expect((await applications.list({ stage: "New" })).rows.map((row) => row.stage)).toEqual(["New"]);
+  expect((await applications.list({ stage: "Screening" })).total).toBe(1);
+  expect((await applications.list({ stage: "All" })).total).toBe(3);
+});
+
+it("combines literal case-insensitive name/email search with Stage and paging", async () => {
+  for (let i = 0; i < 27; i++) await seed(i);
+  await seed(27, "Withdrawn");
+  const applications = applicationsFor(handle, db);
+  const page = await applications.list({ stage: "New", search: "APPLICANT", page: 2 });
+  expect(page.total).toBe(27);
+  expect(page.rows.map((row) => row.applicantName)).toEqual(["Applicant 1", "Applicant 0"]);
+  expect((await applications.list({ search: "SON2@EXAMPLE" })).rows.map((row) => row.applicantName)).toEqual(["Applicant 2"]);
+  expect((await applications.list({ search: "%" })).total).toBe(0);
+  expect((await applications.list({ search: "_" })).total).toBe(0);
+  expect((await applications.list({ search: "' OR true --" })).total).toBe(0);
+});
+
+it("returns search-scoped tab counts independent of the Stage and page", async () => {
+  await seed(1, "Received");
+  await seed(10, "Screening");
+  await seed(11, "Withdrawn");
+  await seed(12, "Rejected");
+  await seed(2, "Hired");
+  const result = await applicationsFor(handle, db).list({ search: "Applicant 1", stage: "New", page: 2 });
+  expect(result).toMatchObject({ rows: [], total: 1, stageCounts: {
+    All: 4, New: 1, Screening: 1, Interview: 0, Offer: 0, Hired: 0, Rejected: 1,
+  } });
+  expect((await applicationsFor(handle, db).list({ search: "absent" })).stageCounts).toEqual({
+    All: 0, New: 0, Screening: 0, Interview: 0, Offer: 0, Hired: 0, Rejected: 0,
+  });
+});
+
+it("counts Applications applied in the last seven days across Stages and search", async () => {
+  // A transaction fixes the database clock so the exact seven-day boundary is testable.
+  await db.exec("BEGIN");
+  const { rows: [{ now }] } = await db.query<{ now: Date }>("SELECT CURRENT_TIMESTAMP AS now");
+  const cutoff = new Date(now).getTime() - 7 * 24 * 60 * 60 * 1000;
+  await seed(1, "Received", "open", new Date(cutoff).toISOString());
+  await seed(2, "Withdrawn", "closed", new Date(now).toISOString());
+  await seed(3, "Hired", "filled", new Date(cutoff - 1).toISOString());
+  await seed(4, "Offer", "open", new Date(new Date(now).getTime() + 1).toISOString());
+  expect((await applicationsFor(handle, db).list({ stage: "New", search: "Applicant 1", page: 2 })).newThisWeek).toBe(2);
+  await db.exec("COMMIT");
+});
+
+it.each([
+  { stage: "Withdrawn" }, { stage: "Received" }, { stage: "unknown" }, { stage: null },
+  { search: 42 }, { search: null },
+])("refuses invalid list filters %j", async (filters) => {
+  // Exercise runtime validation for values received from untyped request parameters.
+  // @ts-expect-error intentionally invalid boundary input
+  await expect(applicationsFor(handle, db).list(filters)).rejects.toMatchObject({ reason: "validation" });
 });

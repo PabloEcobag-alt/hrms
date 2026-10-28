@@ -1,12 +1,26 @@
 # Applications list
 
-`applicationsFor(sessionHandle, db).list({ page })` is the server-side boundary
+`applicationsFor(sessionHandle, db).list({ page, stage, search })` is the server-side boundary
 for the Applicants list. Every call rechecks the Recruitment and Hiring Module
 through the Portal before querying; invalid, denied and unavailable decisions
 throw `ApplicationError` with the corresponding reason.
 
 The result contains `rows`, `total`, `page` (one-based, default 1), and
-`pageSize` (25). Invalid page numbers throw `ApplicationError("validation")`.
+`pageSize` (25), `stageCounts`, and `newThisWeek`. Invalid page numbers or filters
+throw `ApplicationError("validation")`.
+
+`stage` defaults to `All`, which includes Withdrawn. The selectable Stages are
+`New`, `Screening`, `Interview`, `Offer`, `Hired`, and `Rejected`; there is no
+Withdrawn tab. `search` defaults to an empty string and matches a literal,
+case-insensitive substring of the Applicant's name or email (including literal
+`%` and `_` characters). Stage, search and paging combine for `rows` and `total`.
+
+`stageCounts` contains `All` and each selectable Stage, including zero counts.
+These counts follow search and ignore the selected Stage and page; `All` includes
+Withdrawn. `newThisWeek` is the overall number of Applications applied from seven
+days ago through now, inclusive, using the database clock. It ignores Stage,
+search and paging and excludes future applied dates. All figures and rows come
+from one database statement so they share a snapshot.
 Rows are ordered by applied date descending, then Application id descending to
 keep equal dates stable. Empty and out-of-range pages retain the total.
 
@@ -18,5 +32,6 @@ all posting statuses and Withdrawn Applications and maps stored `Received` to
 with the existing direct database connection before using the module.
 
 Next step labels are fixed per Stage. Interview currently reads `Awaiting result`;
-upcoming interview dates are added by #143. Filtering, counts by Stage, CSV,
+upcoming interview dates are added by #143. The filters and counts reuse the
+existing read view, so no additional migration is required. CSV,
 profile reads and mutations belong to subsequent tickets under #133.
