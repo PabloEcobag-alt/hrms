@@ -182,9 +182,14 @@ export default async function Page({
             it is Open.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/job-postings/new">New Job Posting</Link>
-        </Button>
+        <div className="flex items-center gap-sm">
+          <Button variant="outline" asChild>
+            <Link href="/job-templates">Job Templates</Link>
+          </Button>
+          <Button asChild>
+            <Link href="/job-postings/new">New Job Posting</Link>
+          </Button>
+        </div>
       </div>
       <Suspense fallback={<TableSkeleton columns={4} />}>
         <Listing

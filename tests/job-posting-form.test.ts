@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deadlineInputValue, fieldsFromForm } from "@/lib/job-posting-form";
+import { deadlineInputValue, fieldsFromForm, templateFieldsFromForm } from "@/lib/job-posting-form";
 
 const form = (entries: Record<string, string>) => {
   const data = new FormData();
@@ -53,5 +53,13 @@ describe("job posting form", () => {
   it("formats a deadline for a date input", () => {
     expect(deadlineInputValue(new Date("2026-12-31T23:59:59.999Z"))).toBe("2026-12-31");
     expect(deadlineInputValue(null)).toBe("");
+  });
+});
+
+describe("job template form", () => {
+  it("reads the content fields and never a deadline", () => {
+    const fields = templateFieldsFromForm(form({ title: " Cashier ", deadline: "2026-12-31", requiredDocuments: "Resume\nNBI" }));
+    expect(fields).toMatchObject({ title: "Cashier", requiredDocuments: ["Resume", "NBI"] });
+    expect(fields).not.toHaveProperty("deadline");
   });
 });
