@@ -28,6 +28,8 @@ type Props = {
   /** Draft actions: delete, and publish through the form's own submit. */
   deleteAction?: () => Promise<FormState>;
   canPublish?: boolean;
+  /** A brand-new Job Posting: it can be saved as a Draft or published straight away. */
+  isNew?: boolean;
   /** Open actions: close and mark as filled. */
   closeAction?: () => Promise<FormState>;
   fillAction?: () => Promise<FormState>;
@@ -131,6 +133,7 @@ export function JobPostingForm({
   posting,
   deleteAction,
   canPublish,
+  isNew,
   closeAction,
   fillAction,
   readOnly,
@@ -316,7 +319,9 @@ export function JobPostingForm({
               ? "This Job Posting is final and cannot be reopened. Create a new one instead."
               : closeAction
                 ? "Changes appear on Careers as soon as you save."
-                : "Nothing is required to save a Draft."}
+                : isNew
+                  ? "Publishing makes this Job Posting live on Careers right away."
+                  : "Nothing is required to save a Draft."}
         </p>
         <div className="flex items-center gap-sm">
           {templateActions}
@@ -352,24 +357,26 @@ export function JobPostingForm({
           {!readOnly && (
             <Button
               type="submit"
-              variant={canPublish ? "outline" : "default"}
+              variant={canPublish || isNew ? "outline" : "default"}
               disabled={pending}
             >
               {pending
                 ? "Saving…"
                 : template || closeAction
                   ? "Save changes"
-                  : "Save as Draft"}
+                  : isNew
+                    ? "Save as draft"
+                    : "Save as Draft"}
             </Button>
           )}
-          {canPublish && (
+          {(canPublish || isNew) && !readOnly && (
             <Button
               type="submit"
               name="intent"
               value="publish"
               disabled={pending}
             >
-              Publish
+              {isNew ? "Publish job" : "Publish"}
             </Button>
           )}
         </div>

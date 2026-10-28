@@ -39,7 +39,7 @@ export default async function Page({
         <p className="text-body-sm text-muted-foreground">
           {template
             ? `Started from the template “${template.title || "Untitled template"}”. Edit anything, then choose a deadline; the template stays as it was.`
-            : "Type a role freehand and save it as a Draft. It stays hidden from Careers until it is published."}
+            : "Type a role freehand and save it as a Draft or publish it right away. A Draft stays hidden from Careers until it is published."}
         </p>
         {templateId && !template && (
           <p role="alert" className="text-body-sm text-destructive">
@@ -60,6 +60,7 @@ export default async function Page({
       </div>
       <JobPostingForm
         action={createDraft}
+        isNew
         posting={template && { ...template, deadline: null }}
         saveTemplateAction={saveAsTemplate}
       />

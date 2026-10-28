@@ -37,7 +37,15 @@ async function run(operation: (postings: ReturnType<typeof jobPostingsFor>) => P
 }
 
 export async function createDraft(_: FormState, data: FormData): Promise<FormState> {
-  return run((postings) => postings.saveDraft(fieldsFromForm(data)));
+  const publish = data.get("intent") === "publish";
+  return run(async (postings) => {
+    if (publish) {
+      await postings.createAndPublish(fieldsFromForm(data));
+      after(() => retryJobPostingAnnouncements());
+    } else {
+      await postings.saveDraft(fieldsFromForm(data));
+    }
+  });
 }
 
 export async function updateDraft(id: string, _: FormState, data: FormData): Promise<FormState> {
