@@ -408,7 +408,18 @@ it("adopts the existing Careers template table without losing templates", async 
 });
 
 
-it("sends one Administrator-only Audit Event for each successful Staff action, never for views or refusals", async () => {
+it("delivers a publish with the Portal user id and Staff name", async () => {
+  const publisher = portal.signIn({ ...ada, id: "portal-user-42" }, ["Recruitment and Hiring"]);
+  const postings = jobPostingsFor(publisher, db);
+  const draft = await postings.saveDraft(publishable);
+  await postings.publish(draft.id);
+  await retryJobPostingAnnouncements(db);
+  expect(auditRequests.find((event) => event.action === "job_posting.published")).toMatchObject({
+    actor: { type: "user", id: "portal-user-42", display_name: "Ada Okafor" },
+  });
+});
+
+it("delivers Audit Events with the username fallback for each successful Staff action, never for views or refusals", async () => {
   const postings = jobPostingsFor(handle, db);
   const templates = jobTemplatesFor(handle, db);
   const draft = await postings.saveDraft(publishable);
@@ -436,7 +447,7 @@ it("sends one Administrator-only Audit Event for each successful Staff action, n
   ]);
   for (const event of auditRequests) {
     expect(event).toMatchObject({ source: "HRMS", module: "Recruitment and Hiring", outcome: "success",
-      actor: { type: "staff", id: "ada", display_name: "Ada Okafor" }, customer_description: null,
+      actor: { type: "user", id: "ada", display_name: "Ada Okafor" }, customer_description: null,
       occurred_at: expect.any(String), idempotency_key: expect.any(String) });
   }
   expect(auditRequests[2].metadata).toEqual({ applicants_notified: true });
