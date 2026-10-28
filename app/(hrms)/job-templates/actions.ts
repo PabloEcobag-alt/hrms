@@ -42,11 +42,6 @@ export async function createTemplate(
   return run((templates) => templates.create(templateFieldsFromForm(data)));
 }
 
-/** "Save as template" from a posting form: an explicit copy of what is typed, deadline excluded. */
-export async function saveAsTemplate(data: FormData): Promise<void> {
-  await run((templates) => templates.create(templateFieldsFromForm(data)));
-}
-
 export async function updateTemplate(
   id: string,
   _: FormState,

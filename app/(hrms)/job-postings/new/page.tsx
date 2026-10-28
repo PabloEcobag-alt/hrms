@@ -4,7 +4,6 @@ import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { JobTemplateError } from "@/lib/job-postings";
 import { requireModule } from "@/lib/portal/staff";
 import { templatesForRequest } from "@/lib/portal/templates";
-import { saveAsTemplate } from "../../job-templates/actions";
 import { createDraft } from "../actions";
 
 export default async function Page() {
@@ -16,24 +15,24 @@ export default async function Page() {
   });
 
   return (
-    <div className="flex flex-col gap-md p-md sm:p-lg">
-      <div>
+    <div className="flex flex-col gap-md px-md pt-[20px] sm:px-xl">
+      <div className="flex flex-col gap-xs">
         <Link
           href="/job-postings"
-          className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground"
+          className="flex w-fit items-center gap-xs text-[13px] font-medium text-[#71717a] hover:text-foreground"
         >
-          <ChevronLeft className="h-4 w-4" /> Job Postings
+          <ChevronLeft className="size-4" /> Job postings
         </Link>
-        <h1 className="text-headline-md">New Job Posting</h1>
-        <p className="text-body-sm text-muted-foreground">
-          Type a role freehand, or pick a template in the Title field. Save it as a Draft or publish it right away. A
-          Draft stays hidden from Careers until it is published.
+        <h1 className="text-2xl font-semibold text-[#18181b]">New job posting</h1>
+        <p className="text-sm text-[#71717a]">
+          Published jobs appear on your careers page. Drafts stay private until
+          you publish them.
         </p>
       </div>
       <JobPostingForm
         action={createDraft}
         isNew
-        saveTemplateAction={saveAsTemplate}
+        canSaveTemplate
         templates={templates}
       />
     </div>
