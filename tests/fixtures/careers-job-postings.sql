@@ -6,6 +6,8 @@ CREATE TABLE "job_postings" (
 	"department" text NOT NULL,
 	"description" text NOT NULL,
 	"requirements" text NOT NULL,
+ "responsibilities" jsonb NOT NULL DEFAULT '[]'::jsonb,
+ "benefits" jsonb NOT NULL DEFAULT '[]'::jsonb,
 	"employment_type" text NOT NULL,
 	"location" text NOT NULL,
 	"deadline" timestamp with time zone NOT NULL,

@@ -13,7 +13,7 @@ const lines = (data: FormData, name: string) =>
     .filter(Boolean);
 
 /** Every visible form field is sent. */
-export function fieldsFromForm(data: FormData): JobPostingFields {
+export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "responsibilities" | "benefits"> {
   const date = text(data, "deadline");
   // A deadline is the end of its chosen day.
   const deadline = date ? new Date(`${date}T23:59:59.999Z`) : null;

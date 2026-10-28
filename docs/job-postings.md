@@ -248,3 +248,18 @@ assigned independently by the template write.
 Existing Drafts accept the same optional request through
 `editDraft(id, fields, options)` and `publish(id, options)`. They copy the resulting
 saved content; a failed template write preserves the original Draft unchanged.
+
+
+## Responsibilities and Benefits (#106)
+
+Job Postings accept `responsibilities` and `benefits` as lists of text in
+`saveDraft`, `createAndPublish`, `editDraft` and `editOpen`. Both lists are returned
+by saves, edits, reads and lists. Omitted values default to `[]` on creation;
+on edits, omitted or `undefined` values preserve stored content, and `[]` clears
+a list. Neither list is required to publish. Existing `requirements` text is
+preserved independently; no legacy content is split or backfilled.
+
+Careers owns the schema: its `0006_job_responsibilities_benefits.sql` migration
+(ticket #100) provides the JSONB columns with empty defaults. It must be applied
+before deploying this backend. No additional HRMS migration is needed. Job Template
+support and form inputs belong to #117 and #126 respectively.
