@@ -250,3 +250,68 @@ it.each([
   await retryJobPostingAuditDelivery(db);
   expect(sends).toHaveLength(1);
 });
+
+it.each(["saveDraft", "editDraft", "editOpen"] as const)("delivers %s with its own action and clears the outbox on acceptance", async (method) => {
+  const postings = jobPostingsFor(handle, db);
+  const fields = { title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") };
+  const existing = method === "editDraft" ? await postings.saveDraft(fields)
+    : method === "editOpen" ? await postings.createAndPublish(fields) : undefined;
+  await retryJobPostingAnnouncements(db);
+  sends = [];
+  const saved = method === "saveDraft" ? await postings.saveDraft({ title: "Senior Recruiter" })
+    : await postings[method](existing!.id, { title: "Senior Recruiter" });
+  expect(await jobPostingsFor(handle, db).read(saved.id)).toMatchObject({ title: "Senior Recruiter", status: method === "editOpen" ? "open" : "draft" });
+  expect(sends).toHaveLength(1);
+  expect(sends[0]).toMatchObject({ path: "/audit/events", body: {
+    source: "HRMS", module: "Recruitment and Hiring", outcome: "success",
+    action: method === "saveDraft" ? "job_posting.created" : "job_posting.updated",
+    actor: { type: "staff", id: "ada", display_name: "Ada" },
+    target: { type: "job_posting", id: saved.id, display_name: "Senior Recruiter" },
+    idempotency_key: expect.any(String), occurred_at: expect.any(String),
+  } });
+  expect(sends[0].body).not.toHaveProperty("metadata");
+  expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+  await retryJobPostingAuditDelivery(db);
+  await retryJobPostingAnnouncements(db);
+  expect(sends).toHaveLength(1);
+});
+
+it.each([
+  ["saveDraft", "rejected"], ["saveDraft", "network"],
+  ["editDraft", "rejected"], ["editDraft", "network"],
+  ["editOpen", "rejected"], ["editOpen", "network"],
+] as const)("retains %s after %s audit failure and clears the identical event on retry", async (method, failure) => {
+  const postings = jobPostingsFor(handle, db);
+  const fields = { title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") };
+  const existing = method === "editDraft" ? await postings.saveDraft(fields)
+    : method === "editOpen" ? await postings.createAndPublish(fields) : undefined;
+  await retryJobPostingAnnouncements(db);
+  sends = [];
+  auditFailure = failure;
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const saved = method === "saveDraft" ? await postings.saveDraft({ title: "Senior Recruiter" })
+      : await postings[method](existing!.id, { title: "Senior Recruiter" });
+    expect(await jobPostingsFor(handle, db).read(saved.id)).toMatchObject({ title: "Senior Recruiter", status: method === "editOpen" ? "open" : "draft" });
+    expect(sends).toHaveLength(1);
+    const attempt = sends[0];
+    expect(attempt).toMatchObject({ path: "/audit/events", body: {
+      action: method === "saveDraft" ? "job_posting.created" : "job_posting.updated",
+      target: { type: "job_posting", id: saved.id, display_name: "Senior Recruiter" },
+      idempotency_key: expect.any(String),
+    } });
+    expect((await db.query("SELECT id, payload, attempts FROM hrms_audit_outbox")).rows).toEqual([
+      { id: attempt.body.idempotency_key, payload: attempt.body, attempts: 1 },
+    ]);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt]);
+    auditFailure = undefined;
+    await db.exec("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt, attempt]);
+    expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt, attempt]);
+    expect(await postings.read(saved.id)).toEqual(saved);
+  } finally { log.mockRestore(); }
+});
