@@ -1,6 +1,7 @@
 CREATE TABLE "job_postings" (
 
 	"id" text PRIMARY KEY NOT NULL,
+ "announced_at" timestamptz,
 	"title" text NOT NULL,
 	"department" text NOT NULL,
 	"description" text NOT NULL,

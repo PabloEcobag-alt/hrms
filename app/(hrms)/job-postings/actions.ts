@@ -1,9 +1,10 @@
 "use server";
 
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { fieldsFromForm } from "@/lib/job-posting-form";
-import { JobPostingError, type JobPostingFields, type jobPostingsFor } from "@/lib/job-postings";
+import { JobPostingError, retryJobPostingAnnouncements, type JobPostingFields, type jobPostingsFor } from "@/lib/job-postings";
 import { LOGIN_PATH, NO_ACCESS_PATH } from "@/lib/portal/config";
 import { postingsForRequest } from "@/lib/portal/postings";
 
@@ -43,7 +44,10 @@ export async function updateDraft(id: string, _: FormState, data: FormData): Pro
   const publish = data.get("intent") === "publish";
   return run(async (postings) => {
     await postings.editDraft(id, fieldsFromForm(data));
-    if (publish) await postings.publish(id);
+    if (publish) {
+      await postings.publish(id);
+      after(() => retryJobPostingAnnouncements());
+    }
   });
 }
 
