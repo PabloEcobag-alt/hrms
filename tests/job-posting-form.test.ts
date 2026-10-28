@@ -36,6 +36,7 @@ describe("job posting form", () => {
       openings: null,
       salaryFrom: null,
       salaryTo: null,
+      workSchedule: null,
     });
   });
 
@@ -53,6 +54,7 @@ describe("job posting form", () => {
       openings: null,
       salaryFrom: null,
       salaryTo: null,
+      workSchedule: null,
     });
   });
 
@@ -67,6 +69,11 @@ describe("job posting form", () => {
     expect(fieldsFromForm(form({ salaryFrom: " 16000 ", salaryTo: "18500.5" }))).toMatchObject({ salaryFrom: 16000, salaryTo: 18500.5 });
     expect(fieldsFromForm(form({ salaryFrom: "", salaryTo: "  " }))).toMatchObject({ salaryFrom: null, salaryTo: null });
     expect(fieldsFromForm(form({ salaryFrom: "abc" })).salaryFrom).toBeNaN();
+  });
+
+  it("reads the work schedule trimmed, blank meaning unspecified", () => {
+    expect(fieldsFromForm(form({ workSchedule: "  Mon–Fri, 9am–6pm " })).workSchedule).toBe("Mon–Fri, 9am–6pm");
+    expect(fieldsFromForm(form({ workSchedule: "  " })).workSchedule).toBeNull();
   });
 
   it("formats a deadline for a date input", () => {
