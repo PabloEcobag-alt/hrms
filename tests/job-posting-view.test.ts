@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canDelete, formatApplicants, formatPosted, STATUS_FILTERS, STATUS_LABEL, statusCounts, statusFromParam } from "@/lib/job-posting-view";
+import { canDelete, formatApplicants, formatPosted, formatSubtitle, STATUS_FILTERS, STATUS_LABEL, statusCounts, statusFromParam } from "@/lib/job-posting-view";
 
 describe("job posting list view", () => {
   it("labels Open as Published everywhere", () => {
@@ -34,5 +34,18 @@ describe("job posting list view", () => {
     expect(formatApplicants({ status: "open", applicantCount: 7 })).toBe("7");
     expect(formatApplicants({ status: "closed", applicantCount: 0 })).toBe("0");
     expect(formatApplicants({ status: "draft", applicantCount: 0 })).toBe("—");
+  });
+});
+
+describe("job posting subtitle", () => {
+  it("reads Department · N openings with singular and plural", () => {
+    expect(formatSubtitle({ department: "Retail", openings: 1 })).toBe("Retail · 1 opening");
+    expect(formatSubtitle({ department: "Retail", openings: 3 })).toBe("Retail · 3 openings");
+  });
+
+  it("leaves out whatever is unset", () => {
+    expect(formatSubtitle({ department: "Retail", openings: null })).toBe("Retail");
+    expect(formatSubtitle({ department: "", openings: 2 })).toBe("2 openings");
+    expect(formatSubtitle({ department: "", openings: null })).toBe("—");
   });
 });

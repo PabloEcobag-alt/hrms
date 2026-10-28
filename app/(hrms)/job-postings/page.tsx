@@ -18,6 +18,7 @@ import {
   STATUS_LABEL,
   formatApplicants,
   formatPosted,
+  formatSubtitle,
   statusCounts,
   statusFromParam,
 } from "@/lib/job-posting-view";
@@ -83,7 +84,7 @@ function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
                 {titleOf(posting)}
               </Link>
               <p className="text-body-sm text-muted-foreground">
-                {posting.department || "—"}
+                {formatSubtitle(posting)}
               </p>
             </TableCell>
             <TableCell>{posting.location || "—"}</TableCell>

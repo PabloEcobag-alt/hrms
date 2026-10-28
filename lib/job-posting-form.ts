@@ -9,8 +9,8 @@ const lines = (data: FormData, name: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-/** Visible form fields are sent; backend-only salary, openings and work schedule stay omitted on edits. */
-export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "openings" | "salaryFrom" | "salaryTo" | "workSchedule"> {
+/** Visible form fields are sent; backend-only salary and work schedule stay omitted on edits. */
+export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "salaryFrom" | "salaryTo" | "workSchedule"> {
   const date = text(data, "deadline");
   // A deadline is the end of its chosen day.
   const deadline = date ? new Date(`${date}T23:59:59.999Z`) : null;
@@ -25,7 +25,14 @@ export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "openings
     requiredDocuments: lines(data, "requiredDocuments"),
     screeningCriteria: lines(data, "screeningCriteria"),
     deadline: deadline && !Number.isNaN(deadline.getTime()) ? deadline : null,
+    openings: openingsFromForm(data),
   };
+}
+
+/** Blank means no openings set; anything else is sent as typed so the backend can reject it. */
+function openingsFromForm(data: FormData): number | null {
+  const value = text(data, "openings");
+  return value ? Number(value) : null;
 }
 
 export function deadlineInputValue(deadline: Date | null): string {
@@ -33,8 +40,8 @@ export function deadlineInputValue(deadline: Date | null): string {
 }
 
 /** A Job Template keeps everything except the deadline. */
-export function templateFieldsFromForm(data: FormData): Omit<JobTemplateFields, "openings" | "salaryFrom" | "salaryTo" | "workSchedule"> {
+export function templateFieldsFromForm(data: FormData): Omit<JobTemplateFields, "salaryFrom" | "salaryTo" | "workSchedule"> {
   const fields: Partial<JobPostingFields> = fieldsFromForm(data);
   delete fields.deadline;
-  return fields as Omit<JobTemplateFields, "openings" | "salaryFrom" | "salaryTo" | "workSchedule">;
+  return fields as Omit<JobTemplateFields, "salaryFrom" | "salaryTo" | "workSchedule">;
 }

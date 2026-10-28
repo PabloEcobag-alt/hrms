@@ -33,6 +33,7 @@ describe("job posting form", () => {
       requiredDocuments: ["Resume", "NBI clearance"],
       screeningCriteria: ["Cash handling"],
       deadline: new Date("2026-12-31T23:59:59.999Z"),
+      openings: null,
     });
   });
 
@@ -47,7 +48,15 @@ describe("job posting form", () => {
       requiredDocuments: [],
       screeningCriteria: [],
       deadline: null,
+      openings: null,
     });
+  });
+
+  it("reads openings as a number, leaving bad input for the backend to reject", () => {
+    expect(fieldsFromForm(form({ openings: " 3 " })).openings).toBe(3);
+    expect(fieldsFromForm(form({ openings: "" })).openings).toBeNull();
+    expect(fieldsFromForm(form({ openings: "2.5" })).openings).toBe(2.5);
+    expect(fieldsFromForm(form({ openings: "abc" })).openings).toBeNaN();
   });
 
   it("formats a deadline for a date input", () => {
@@ -61,5 +70,6 @@ describe("job template form", () => {
     const fields = templateFieldsFromForm(form({ title: " Cashier ", deadline: "2026-12-31", requiredDocuments: "Resume\nNBI" }));
     expect(fields).toMatchObject({ title: "Cashier", requiredDocuments: ["Resume", "NBI"] });
     expect(fields).not.toHaveProperty("deadline");
+    expect(templateFieldsFromForm(form({ openings: "4" })).openings).toBe(4);
   });
 });

@@ -90,6 +90,7 @@ const selectClass =
 
 const ERROR_TEXT: Record<string, string> = {
   deadline: "Choose a deadline in the future.",
+  openings: "Enter a whole number of 1 or more (up to 2,147,483,647).",
 };
 
 export function JobPostingForm({
@@ -174,6 +175,17 @@ export function JobPostingForm({
                 name="location"
                 {...invalid("location")}
                 defaultValue={posting?.location}
+              />
+            </Field>
+            <Field name="openings" label="Openings" error={errors.openings}>
+              <Input
+                id="openings"
+                name="openings"
+                {...invalid("openings")}
+                type="number"
+                min={1}
+                step={1}
+                defaultValue={posting?.openings ?? ""}
               />
             </Field>
             {!template && (
