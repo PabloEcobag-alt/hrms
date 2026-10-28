@@ -7,7 +7,7 @@ type AuditAction = "job_posting.created" | "job_posting.updated" | "job_posting.
   | "job_template.updated" | "job_template.deleted";
 
 /** The mutation and its delivery record commit together in one SQL statement. */
-export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, action: AuditAction, sql: string, values: unknown[]) {
+export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, action: AuditAction, sql: string, values: unknown[], templateName?: string) {
   const id = randomUUID();
   const type = action.split(".")[0];
   const event = {
@@ -17,6 +17,25 @@ export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, acti
     description: `${staff.name} performed ${action}.`,
     ...(action === "job_posting.published" ? { metadata: { applicants_notified: false } } : {}),
   };
+  // Copy only reusable content from the row actually saved, in the same statement.
+  const templateId = randomUUID();
+  const templateAuditId = randomUUID();
+  const templateSql = templateName === undefined ? "" : `, saved_template AS (
+    INSERT INTO public.job_templates
+      (id, name, title, department, employment_type, location, description, requirements,
+       required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule)
+    SELECT $${values.length + 5}, $${values.length + 6}, title, department, "employmentType", location,
+      description, requirements, "requiredDocuments", "screeningCriteria", openings,
+      "salaryFrom", "salaryTo", "workSchedule" FROM changed RETURNING id, title
+  ), template_queued AS (
+    INSERT INTO public.hrms_audit_outbox (id, payload)
+    SELECT $${values.length + 7}, $${values.length + 8}::jsonb || jsonb_build_object(
+      'target', jsonb_build_object('type', 'job_template', 'id', id,
+        'display_name', COALESCE(NULLIF(title, ''), id))) FROM saved_template
+  )`;
+  const templateValues = templateName === undefined ? [] : [templateId, templateName, templateAuditId,
+    JSON.stringify({ ...event, action: "job_template.created", metadata: undefined,
+      description: `${staff.name} performed job_template.created.`, idempotency_key: templateAuditId })];
   const result = await db.query<T>(`WITH changed AS (${sql}), queued AS (
     INSERT INTO public.hrms_audit_outbox (id, payload)
     SELECT $${values.length + 1}, $${values.length + 2}::jsonb || jsonb_build_object(
@@ -27,9 +46,12 @@ export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, acti
     SELECT id, $${values.length + 1}, title FROM changed
     WHERE $${values.length + 4}::boolean
     ON CONFLICT (posting_id) DO NOTHING
-  ) SELECT * FROM changed`, [...values, id, JSON.stringify(event), type, action === "job_posting.published"]);
+  )${templateSql} SELECT * FROM changed`, [...values, id, JSON.stringify(event), type, action === "job_posting.published", ...templateValues]);
   // Delivery failure is isolated from the already committed Staff action.
-  if (result.rows.length) await retryJobPostingAudit(db, id);
+  if (result.rows.length) {
+    await retryJobPostingAudit(db, id);
+    if (templateName !== undefined) await retryJobPostingAudit(db, templateAuditId);
+  }
   return result;
 }
 

@@ -21,6 +21,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0009-job-template-name.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
   await db.exec(await readFile(new URL("./fixtures/careers-applications.sql", import.meta.url), "utf8"));
@@ -393,6 +394,7 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0009-job-template-name.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -725,4 +727,64 @@ it("rechecks Portal access before direct publication", async () => {
 it.each([null, new Date("2000-01-01"), new Date("invalid")])("refuses a missing, past or invalid direct-publication deadline (%s)", async (deadline) => {
   await expect(jobPostingsFor(handle, db).createAndPublish({ ...publishable, deadline })).rejects.toMatchObject({ reason: "validation", fieldErrors: { deadline: expect.any(String) } });
   expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+});
+
+
+it.each(["saveDraft", "createAndPublish"] as const)("%s saves a named independent template atomically", async (operation) => {
+  const posting = await jobPostingsFor(handle, db)[operation](publishable, { saveAsTemplate: { name: "  Recruitment base  " } });
+  const [template] = await jobTemplatesFor(handle, db).list();
+  expect(template).toMatchObject({ name: "Recruitment base", title: publishable.title });
+  expect(template.id).not.toBe(posting.id);
+  expect(template).not.toHaveProperty("deadline");
+  expect(template).not.toHaveProperty("status");
+  expect(template).not.toHaveProperty("firstPublishedAt");
+  const draft = await jobTemplatesFor(handle, db).startPosting(template.id);
+  expect(draft).toMatchObject({ ...publishable, deadline: null, status: "draft", firstPublishedAt: null });
+});
+
+
+it.each(["saveDraft", "createAndPublish"] as const)("%s refuses a blank template name without saving either row", async (operation) => {
+  for (const name of [undefined, "", " \t "] ) {
+    await expect(jobPostingsFor(handle, db)[operation](publishable, { saveAsTemplate: { name } }))
+      .rejects.toMatchObject({ reason: "validation", fieldErrors: { templateName: expect.any(String) } });
+  }
+  expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+  expect(await jobTemplatesFor(handle, db).list()).toEqual([]);
+  expect(auditRequests).toEqual([]);
+});
+
+it.each(["saveDraft", "createAndPublish"] as const)("%s rolls back the posting when template persistence fails", async (operation) => {
+  await db.exec("ALTER TABLE job_templates ADD CONSTRAINT reject_template CHECK (false)");
+  await expect(jobPostingsFor(handle, db)[operation](publishable, { saveAsTemplate: { name: "Base" } })).rejects.toBeDefined();
+  expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+  expect(await jobTemplatesFor(handle, db).list()).toEqual([]);
+  expect((await db.query("SELECT * FROM hrms_audit_outbox")).rows).toEqual([]);
+  expect((await db.query("SELECT * FROM hrms_posting_announcements")).rows).toEqual([]);
+  expect(auditRequests).toEqual([]);
+});
+
+
+it.each(["editDraft", "publish"] as const)("%s saves a named template from an existing Draft", async (operation) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  const options = { saveAsTemplate: { name: "Existing draft base" } };
+  const saved = operation === "publish" ? await postings.publish(draft.id, options)
+    : await postings.editDraft(draft.id, { title: "Updated role" }, options);
+  const [template] = await jobTemplatesFor(handle, db).list();
+  expect(template).toMatchObject({ name: "Existing draft base", title: saved.title });
+  expect(template.id).not.toBe(draft.id);
+});
+
+it.each(["editDraft", "publish"] as const)("%s preserves the original Draft on invalid name or template failure", async (operation) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  const submit = (name: string) => operation === "publish"
+    ? postings.publish(draft.id, { saveAsTemplate: { name } })
+    : postings.editDraft(draft.id, { title: "Changed" }, { saveAsTemplate: { name } });
+  await expect(submit(" ")).rejects.toMatchObject({ fieldErrors: { templateName: expect.any(String) } });
+  await db.exec("ALTER TABLE job_templates ADD CONSTRAINT reject_template CHECK (false)");
+  await expect(submit("Base")).rejects.toBeDefined();
+  expect(await postings.read(draft.id)).toEqual(draft);
+  expect(await jobTemplatesFor(handle, db).list()).toEqual([]);
+  expect((await db.query("SELECT * FROM hrms_posting_announcements")).rows).toEqual([]);
 });

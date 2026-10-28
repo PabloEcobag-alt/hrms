@@ -226,3 +226,25 @@ leaves none of them behind; there is no separate `job_posting.created` event.
 Callers schedule `retryJobPostingAnnouncements` as for Draft publication.
 Careers visibility remains `status = 'open' AND deadline > now()`.
 No new migration is required.
+
+## Save a named template on submit (#69)
+
+`saveDraft(fields, { saveAsTemplate: { name } })` and
+`createAndPublish(fields, { saveAsTemplate: { name } })` optionally save an
+independent Job Template in the same SQL statement as the posting, Audit Events
+and (for publication) announcement. A missing or whitespace-only name returns
+`JobPostingError("validation")` with a `templateName` field error and writes
+neither row. Names are trimmed. Omitting the request retains existing behavior.
+Any persistence failure rolls back both rows and their queued work.
+
+Apply `0009-job-template-name.sql` before deploying. It adds nullable `name` to
+`public.job_templates`; existing and standalone templates retain `NULL`, without
+backfill. Template results include `name`, separate from the role `title`.
+Careers must preserve the added column in future schema migrations. Application
+rollback can leave it in place. Template content is copied from the saved posting;
+deadline, status, id and timestamps are excluded, and identity/timestamps are
+assigned independently by the template write.
+
+Existing Drafts accept the same optional request through
+`editDraft(id, fields, options)` and `publish(id, options)`. They copy the resulting
+saved content; a failed template write preserves the original Draft unchanged.
