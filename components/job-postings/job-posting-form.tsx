@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,11 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_REQUIRED_DOCUMENTS, EMPLOYMENT_TYPES, splitRequirements } from "@/lib/job-posting-form";
-import type { JobPosting } from "@/lib/job-postings";
+import type { JobPosting, JobTemplate } from "@/lib/job-postings";
 import type { FormState } from "@/app/(hrms)/job-postings/actions";
 import { DeadlinePicker } from "./deadline-picker";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { RequiredDocuments } from "./required-documents";
+import { TemplatePicker } from "./template-picker";
 
 type Props = {
   action?: (state: FormState, data: FormData) => Promise<FormState>;
@@ -39,6 +40,8 @@ type Props = {
   saveTemplateAction?: (data: FormData) => Promise<void>;
   /** Extra template-only action, e.g. delete. */
   templateActions?: React.ReactNode;
+  /** Saved Job Templates offered in the Job title field of a new posting. */
+  templates?: JobTemplate[];
 };
 
 const noAction = async (): Promise<FormState> => ({});
@@ -137,7 +140,11 @@ export function JobPostingForm({
   template,
   saveTemplateAction,
   templateActions,
+  templates,
 }: Props) {
+  // Choosing a template refills the fields below; the deadline stays as it was.
+  const [deadline, setDeadline] = useState(posting?.deadline ?? null);
+  const [picked, setPicked] = useState<{ template: JobTemplate; count: number }>();
   const [state, submit, pending] = useActionState(action ?? noAction, {});
   const errors = Object.fromEntries(
     Object.keys(state.fieldErrors ?? {}).map((field) => [
@@ -145,9 +152,10 @@ export function JobPostingForm({
       ERROR_TEXT[field] ?? "This field is required.",
     ]),
   ) as Record<string, string>;
-  const sections = splitRequirements(posting?.requirements ?? "");
+  const values = picked?.template ?? posting;
+  const sections = splitRequirements(values?.requirements ?? "");
   // A new posting starts with the defaults ticked.
-  const checkedDocuments = posting ? (posting.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
+  const checkedDocuments = values ? (values.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
   // Marks an input as invalid for assistive tech and styling.
   const invalid = (name: string, errorKey = name) =>
     errors[errorKey]
@@ -156,7 +164,7 @@ export function JobPostingForm({
 
   return (
     <form action={submit} className="flex flex-col gap-md">
-      <fieldset disabled={readOnly} className="contents">
+      <fieldset disabled={readOnly} className="contents" key={picked?.count ?? 0}>
         {state.error && (
           <Alert variant="destructive">
             <AlertDescription>{state.error}</AlertDescription>
@@ -167,12 +175,21 @@ export function JobPostingForm({
           description="What Applicants will see once this Job Posting is Published."
         >
           <Field name="title" label="Title" error={errors.title}>
-            <Input
-              id="title"
-              name="title"
-              {...invalid("title")}
-              defaultValue={posting?.title}
-            />
+            <div className="flex items-center rounded-md border border-input shadow-sm focus-within:ring-1 focus-within:ring-ring">
+              <Input
+                id="title"
+                name="title"
+                {...invalid("title")}
+                defaultValue={values?.title}
+                className="border-0 shadow-none focus-visible:ring-0"
+              />
+              {templates && !template && !readOnly && (
+                <TemplatePicker
+                  templates={templates}
+                  onPick={(chosen) => setPicked((previous) => ({ template: chosen, count: (previous?.count ?? 0) + 1 }))}
+                />
+              )}
+            </div>
           </Field>
           <div className="grid gap-md sm:grid-cols-2">
             <Field
@@ -184,7 +201,7 @@ export function JobPostingForm({
                 id="department"
                 name="department"
                 {...invalid("department")}
-                defaultValue={posting?.department}
+                defaultValue={values?.department}
               />
             </Field>
             <Field
@@ -196,7 +213,7 @@ export function JobPostingForm({
                 id="employmentType"
                 name="employmentType"
                 {...invalid("employmentType")}
-                defaultValue={posting?.employmentType ?? ""}
+                defaultValue={values?.employmentType ?? ""}
                 className={selectClass}
               >
                 <option value="">Select…</option>
@@ -210,7 +227,7 @@ export function JobPostingForm({
                 id="location"
                 name="location"
                 {...invalid("location")}
-                defaultValue={posting?.location}
+                defaultValue={values?.location}
               />
             </Field>
             <Field name="openings" label="Openings" error={errors.openings}>
@@ -221,7 +238,7 @@ export function JobPostingForm({
                 type="number"
                 min={1}
                 step={1}
-                defaultValue={posting?.openings ?? ""}
+                defaultValue={values?.openings ?? ""}
               />
             </Field>
             {!template && (
@@ -229,7 +246,8 @@ export function JobPostingForm({
                 <DeadlinePicker
                   name="deadline"
                   {...invalid("deadline")}
-                  defaultValue={posting?.deadline ?? null}
+                  defaultValue={deadline}
+                  onChange={(value) => setDeadline(value ? new Date(`${value}T23:59:59.999Z`) : null)}
                 />
               </Field>
             )}
@@ -245,7 +263,7 @@ export function JobPostingForm({
               name="summary"
               {...invalid("summary", "description")}
               rows={3}
-              defaultValue={posting?.description}
+              defaultValue={values?.description}
             />
           </Field>
           <Field name="responsibilities" label="Responsibilities">
@@ -271,10 +289,10 @@ export function JobPostingForm({
         >
           <div className="grid gap-md sm:grid-cols-2">
             <Field name="salaryFrom" label="Salary from" error={errors.salaryFrom}>
-              <PesoInput name="salaryFrom" invalid={invalid("salaryFrom")} defaultValue={posting?.salaryFrom} />
+              <PesoInput name="salaryFrom" invalid={invalid("salaryFrom")} defaultValue={values?.salaryFrom} />
             </Field>
             <Field name="salaryTo" label="Salary to" error={errors.salaryTo}>
-              <PesoInput name="salaryTo" invalid={invalid("salaryTo")} defaultValue={posting?.salaryTo} />
+              <PesoInput name="salaryTo" invalid={invalid("salaryTo")} defaultValue={values?.salaryTo} />
             </Field>
           </div>
           <Field name="workSchedule" label="Work schedule" error={errors.workSchedule}>
@@ -283,7 +301,7 @@ export function JobPostingForm({
               name="workSchedule"
               {...invalid("workSchedule")}
               placeholder="e.g. Mon–Fri, 9am–6pm"
-              defaultValue={posting?.workSchedule ?? ""}
+              defaultValue={values?.workSchedule ?? ""}
             />
           </Field>
           <p className="text-body-sm text-muted-foreground">
@@ -303,7 +321,7 @@ export function JobPostingForm({
               id="screeningCriteria"
               name="screeningCriteria"
               rows={3}
-              defaultValue={posting?.screeningCriteria?.join("\n")}
+              defaultValue={values?.screeningCriteria?.join("\n")}
             />
           </Field>
         </Section>
