@@ -31,6 +31,12 @@ type Props = {
   fillAction?: () => Promise<FormState>;
   /** Closed and Filled postings show their values and offer nothing else. */
   readOnly?: boolean;
+  /** A Job Template form: no deadline, and nothing about publishing. */
+  template?: boolean;
+  /** Explicit "Save as template", submitted with the values currently typed. */
+  saveTemplateAction?: (data: FormData) => Promise<void>;
+  /** Extra template-only action, e.g. delete. */
+  templateActions?: React.ReactNode;
 };
 
 const noAction = async (): Promise<FormState> => ({});
@@ -94,6 +100,9 @@ export function JobPostingForm({
   closeAction,
   fillAction,
   readOnly,
+  template,
+  saveTemplateAction,
+  templateActions,
 }: Props) {
   const [state, submit, pending] = useActionState(action ?? noAction, {});
   const errors = Object.fromEntries(
@@ -167,15 +176,17 @@ export function JobPostingForm({
                 defaultValue={posting?.location}
               />
             </Field>
-            <Field name="deadline" label="Deadline" error={errors.deadline}>
-              <Input
-                id="deadline"
-                name="deadline"
-                {...invalid("deadline")}
-                type="date"
-                defaultValue={deadlineInputValue(posting?.deadline ?? null)}
-              />
-            </Field>
+            {!template && (
+              <Field name="deadline" label="Deadline" error={errors.deadline}>
+                <Input
+                  id="deadline"
+                  name="deadline"
+                  {...invalid("deadline")}
+                  type="date"
+                  defaultValue={deadlineInputValue(posting?.deadline ?? null)}
+                />
+              </Field>
+            )}
           </div>
           <Field
             name="description"
@@ -229,13 +240,16 @@ export function JobPostingForm({
       </fieldset>
       <div className="sticky bottom-0 -mx-md flex items-center justify-between gap-sm border-t border-border bg-background px-md py-md sm:-mx-lg sm:px-lg">
         <p className="hidden text-body-sm text-muted-foreground sm:block">
-          {readOnly
-            ? "This Job Posting is final and cannot be reopened. Create a new one instead."
-            : closeAction
-              ? "Changes appear on Careers as soon as you save."
-              : "Nothing is required to save a Draft."}
+          {template
+            ? "A template saves everything except the deadline. Postings started from it are copies."
+            : readOnly
+              ? "This Job Posting is final and cannot be reopened. Create a new one instead."
+              : closeAction
+                ? "Changes appear on Careers as soon as you save."
+                : "Nothing is required to save a Draft."}
         </p>
         <div className="flex items-center gap-sm">
+          {templateActions}
           {deleteAction && <DeleteDraftButton action={deleteAction} />}
           {closeAction && (
             <PostingStatusButton
@@ -256,6 +270,15 @@ export function JobPostingForm({
           <Button variant="outline" asChild>
             <Link href="/job-postings">{readOnly ? "Back" : "Cancel"}</Link>
           </Button>
+          {saveTemplateAction && !readOnly && (
+            <Button
+              type="submit"
+              variant="outline"
+              formAction={saveTemplateAction}
+            >
+              Save as template
+            </Button>
+          )}
           {!readOnly && (
             <Button
               type="submit"
@@ -264,7 +287,7 @@ export function JobPostingForm({
             >
               {pending
                 ? "Saving…"
-                : closeAction
+                : template || closeAction
                   ? "Save changes"
                   : "Save as Draft"}
             </Button>

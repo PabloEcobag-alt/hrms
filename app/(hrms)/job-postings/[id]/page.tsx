@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
+import { saveAsTemplate } from "../../job-templates/actions";
 import {
   closePosting,
   fillPosting,
@@ -52,6 +53,7 @@ export default async function Page({
           action={updateDraft.bind(null, id)}
           deleteAction={removeDraft.bind(null, id)}
           canPublish
+          saveTemplateAction={saveAsTemplate}
         />
       )}
       {posting.status === "open" && (
@@ -60,6 +62,7 @@ export default async function Page({
           action={updateOpen.bind(null, id)}
           closeAction={closePosting.bind(null, id)}
           fillAction={fillPosting.bind(null, id)}
+          saveTemplateAction={saveAsTemplate}
         />
       )}
       {(posting.status === "closed" || posting.status === "filled") && (

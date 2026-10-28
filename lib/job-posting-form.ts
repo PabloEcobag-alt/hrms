@@ -1,4 +1,4 @@
-import type { JobPostingFields } from "./job-postings";
+import type { JobPostingFields, JobTemplateFields } from "./job-postings";
 
 export const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship"];
 
@@ -30,4 +30,11 @@ export function fieldsFromForm(data: FormData): JobPostingFields {
 
 export function deadlineInputValue(deadline: Date | null): string {
   return deadline ? deadline.toISOString().slice(0, 10) : "";
+}
+
+/** A Job Template keeps everything except the deadline. */
+export function templateFieldsFromForm(data: FormData): JobTemplateFields {
+  const fields: Partial<JobPostingFields> = fieldsFromForm(data);
+  delete fields.deadline;
+  return fields as JobTemplateFields;
 }
