@@ -27,9 +27,19 @@ export function DeadlinePicker({
     <Popover open={open} onOpenChange={setOpen}>
       <input type="hidden" name={name} value={value} />
       <PopoverTrigger asChild>
-        <Button id={name} type="button" variant="outline" className="justify-start font-normal" {...aria}>
-          <CalendarIcon className="h-4 w-4" />
-          {selected ? selected.toLocaleDateString("en-PH", { dateStyle: "long" }) : "Pick a date"}
+        <Button
+          id={name}
+          type="button"
+          variant="outline"
+          className="h-auto w-full justify-between rounded-lg border-[#e4e4e7] px-[12px] py-[10px] font-normal shadow-none"
+          {...aria}
+        >
+          <span className={selected ? "text-[#18181b]" : "text-[#a1a1aa]"}>
+            {selected
+              ? selected.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+              : "Select date"}
+          </span>
+          <CalendarIcon className="size-4 text-[#71717a]" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-sm" align="start">

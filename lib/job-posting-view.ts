@@ -18,7 +18,7 @@ export const STATUS_LABEL: Record<JobPostingStatus, string> = {
 export const STATUS_BADGE = {
   draft: "secondary",
   open: "success",
-  closed: "destructive",
+  closed: "secondary",
   filled: "info",
 } as const;
 

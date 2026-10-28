@@ -7,7 +7,6 @@ import { editFooter } from "@/lib/job-posting-form";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
-import { saveAsTemplate } from "../../job-templates/actions";
 import {
   closePosting,
   fillPosting,
@@ -36,23 +35,23 @@ export default async function Page({
   const footer = editFooter(posting.status);
 
   return (
-    <div className="flex flex-col gap-md p-md sm:p-lg">
-      <div>
+    <div className="flex flex-col gap-md px-md pt-[20px] sm:px-xl">
+      <div className="flex flex-col gap-xs">
         <Link
           href="/job-postings"
-          className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground"
+          className="flex w-fit items-center gap-xs text-[13px] font-medium text-[#71717a] hover:text-foreground"
         >
-          <ChevronLeft className="h-4 w-4" /> Job Postings
+          <ChevronLeft className="size-4" /> Job postings
         </Link>
         <div className="flex items-center gap-sm">
-          <h1 className="text-headline-md">
+          <h1 className="text-2xl font-semibold text-[#18181b]">
             {posting.status === "draft" ? "Edit Job Posting" : posting.title}
           </h1>
           <Badge variant={STATUS_BADGE[posting.status]}>
             {STATUS_LABEL[posting.status]}
           </Badge>
         </div>
-        <p className="text-body-sm text-muted-foreground">
+        <p className="text-sm text-[#71717a]">
           {INTRO[posting.status]}
         </p>
       </div>
@@ -70,7 +69,7 @@ export default async function Page({
         fillAction={footer.fill ? fillPosting.bind(null, id) : undefined}
         canPublish={footer.publish}
         readOnly={!footer.saveAsDraft && !footer.saveChanges}
-        saveTemplateAction={saveAsTemplate}
+        canSaveTemplate={footer.saveAsDraft}
       />
     </div>
   );
