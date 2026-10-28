@@ -62,7 +62,7 @@ const CELL = "px-0 py-[11px] text-sm text-foreground";
 
 function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
   return (
-    <Table className="table-fixed">
+    <Table className="table-fixed min-w-[900px]">
       <TableHeader>
         <TableRow className="border-border-subtle hover:bg-transparent">
           <TableHead className={`${HEAD} w-[26%]`}>Job</TableHead>
