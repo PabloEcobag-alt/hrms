@@ -1,4 +1,4 @@
-import { closeExpiredJobPostings, retryJobPostingAuditDelivery } from "@/lib/job-postings";
+import { closeExpiredJobPostings, retryJobPostingAnnouncements } from "@/lib/job-postings";
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -6,6 +6,6 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   await closeExpiredJobPostings();
-  await retryJobPostingAuditDelivery();
+  await retryJobPostingAnnouncements();
   return Response.json({ ok: true });
 }

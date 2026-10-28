@@ -1,3 +1,4 @@
+import { deliverAnnouncements } from "./job-posting-announcements";
 import { auditedMutation, retryJobPostingAudit } from "./job-posting-audit";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
@@ -274,5 +275,11 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
 
 /** Called only after authenticating the maintenance request. */
 export async function retryJobPostingAuditDelivery(db: PostingDatabase = database) {
+  await retryJobPostingAudit(db);
+}
+
+/** Authenticated maintenance only; announcement delivery never runs on the publish path. */
+export async function retryJobPostingAnnouncements(db: PostingDatabase = database) {
+  await deliverAnnouncements(db);
   await retryJobPostingAudit(db);
 }

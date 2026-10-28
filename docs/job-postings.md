@@ -104,3 +104,39 @@ table, it preserves its rows and sets the legacy `status` column default to `dra
 so content-only saves remain compatible. HRMS does not expose that legacy status.
 Application rollback can leave the added table in place. Auditing remains in its
 separate follow-up ticket.
+
+## First-publish announcements (#37)
+
+Publishing atomically queues one announcement with the publish Audit Event. It
+performs no notification HTTP calls. The Server Action starts delivery through
+Next.js `after`, after returning the publish response; the authenticated daily
+maintenance route retries remaining work. Direct module callers must invoke the
+maintenance entry point `retryJobPostingAnnouncements(db?)` from their worker.
+
+Set server-only `CAREERS_URL` to Careers' public HTTPS origin. Delivery uses
+`API_GATEWAY_URL` and `API_GATEWAY_KEY` for the HRMS Caller. Careers must already
+provide `job_postings.announced_at`, `applicant_profiles.job_alerts_opt_in` and
+Neon Auth's `neon_auth."user"` (`id`, `email`, `emailVerified`). Its migration
+owns those columns; HRMS migration `0004` adds only its durable work tables.
+
+The first delivery attempt snapshots all registered Neon Auth Applicants,
+including those without a profile, for in-app sends. Only a Verified Applicant
+with an opted-in profile receives App email, using the Auth email address.
+Recipients, content and per-recipient/channel keys persist across retries;
+registrations after the snapshot do not expand it. Edits and final status changes
+never queue another announcement. Historical Open rows are never backfilled.
+
+The notifications service must support `Idempotency-Key` on App email before
+this code is deployed (companion notifications PR). In-app requests use its
+existing `idempotencyKey` field. Failed and uncertain requests retain their keys.
+Gateway acceptance means queued email/stored notification, rather than confirmed
+SMTP delivery. Once every send is accepted, one atomic statement sets
+`announced_at`, completes the work record and sets `applicants_notified: true`
+on the original publish Audit Event. That event is held locally until completion,
+since audit-logs treats accepted events as immutable. Other Audit Events proceed
+independently. No separate announcement Audit Event is emitted.
+
+Each maintenance invocation snapshots up to 20 announcements and attempts up to
+50 sends with five-second timeouts and capped retry backoff. Larger audiences
+continue on subsequent invocations. A service outage can delay the publication
+Audit Event but cannot roll back or delay the publish response.

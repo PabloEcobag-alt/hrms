@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { closeExpiredJobPostings, jobPostingsFor, jobTemplatesFor } from "@/lib/job-postings";
+import { closeExpiredJobPostings, jobPostingsFor, jobTemplatesFor, retryJobPostingAnnouncements } from "@/lib/job-postings";
 import { FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, FakePortal, portalFetch } from "./fake-portal";
 
 const ada = { name: "Ada Okafor", username: "ada", email: "ada@example.test", role: "HR Officer" };
@@ -16,6 +16,10 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0001-job-posting-drafts.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
+  await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
+    CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
+  vi.stubEnv("CAREERS_URL", "https://careers.test");
   portal = new FakePortal();
   handle = portal.signIn(ada, ["Recruitment and Hiring"]);
   auditRequests = [];
@@ -315,13 +319,13 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
     await legacy.exec(`CREATE TABLE job_templates (LIKE job_postings INCLUDING ALL);
       ALTER TABLE job_templates DROP COLUMN deadline;
-      ALTER TABLE job_templates ADD COLUMN announced_at timestamptz;
       INSERT INTO job_templates (id,title,department,description,requirements,employment_type,location,required_documents,screening_criteria,status)
       VALUES ('legacy','Existing role','','','','','','[]','[]','draft');`);
     const migration = await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8");
     await legacy.exec(migration);
     await legacy.exec(migration);
     await legacy.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -339,11 +343,13 @@ it("sends one Administrator-only Audit Event for each successful Staff action, n
   const draft = await postings.saveDraft(publishable);
   await postings.editDraft(draft.id, { title: "Senior Recruiter" });
   await postings.publish(draft.id);
+  await retryJobPostingAnnouncements(db);
   await postings.editOpen(draft.id, { title: "Recruiter" });
   await postings.close(draft.id);
   await expect(postings.close(draft.id)).rejects.toBeDefined();
   const filled = await postings.saveDraft(publishable);
   await postings.publish(filled.id);
+  await retryJobPostingAnnouncements(db);
   await postings.markFilled(filled.id);
   const template = await templates.create({ title: "Recruiter" });
   await templates.edit(template.id, { title: "Senior Recruiter" });
@@ -362,7 +368,7 @@ it("sends one Administrator-only Audit Event for each successful Staff action, n
       actor: { type: "staff", id: "ada", display_name: "Ada Okafor" }, customer_description: null,
       occurred_at: expect.any(String), idempotency_key: expect.any(String) });
   }
-  expect(auditRequests[2].metadata).toEqual({ applicants_notified: false });
+  expect(auditRequests[2].metadata).toEqual({ applicants_notified: true });
   expect(auditRequests[0].target).toEqual({ type: "job_posting", id: draft.id, display_name: "Recruiter" });
   expect(auditRequests[10].target).toEqual({ type: "job_posting", id: copied.id, display_name: "Senior Recruiter" });
   expect(auditRequests[11].target).toEqual({ type: "job_template", id: template.id, display_name: "Senior Recruiter" });
@@ -385,6 +391,7 @@ it("keeps a successful publish when audit fails and retries the identical event 
   });
   try {
     expect(await postings.publish(draft.id)).toMatchObject({ status: "open" });
+    await retryJobPostingAnnouncements(db);
     expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ status: "open" });
     expect(log).toHaveBeenCalled();
     await db.query("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");

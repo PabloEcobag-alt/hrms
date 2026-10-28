@@ -22,7 +22,12 @@ export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, acti
     SELECT $${values.length + 1}, $${values.length + 2}::jsonb || jsonb_build_object(
       'target', jsonb_build_object('type', $${values.length + 3}::text, 'id', id,
         'display_name', COALESCE(NULLIF(title, ''), id))) FROM changed
-  ) SELECT * FROM changed`, [...values, id, JSON.stringify(event), type]);
+  ), announcement AS (
+    INSERT INTO public.hrms_posting_announcements (posting_id, audit_id, title)
+    SELECT id, $${values.length + 1}, title FROM changed
+    WHERE $${values.length + 4}::boolean
+    ON CONFLICT (posting_id) DO NOTHING
+  ) SELECT * FROM changed`, [...values, id, JSON.stringify(event), type, action === "job_posting.published"]);
   // Delivery failure is isolated from the already committed Staff action.
   if (result.rows.length) await retryJobPostingAudit(db, id);
   return result;
@@ -34,6 +39,8 @@ export async function retryJobPostingAudit(db: PostingDatabase, eventId?: string
     const { rows } = await db.query<{ id: string; payload: unknown }>(
       `SELECT id, payload FROM public.hrms_audit_outbox
        WHERE ($1::text IS NULL OR id = $1) AND next_attempt_at <= clock_timestamp()
+         AND NOT EXISTS (SELECT 1 FROM public.hrms_posting_announcements a
+           WHERE a.audit_id = hrms_audit_outbox.id AND a.completed_at IS NULL)
        ORDER BY next_attempt_at, id LIMIT 50`, [eventId ?? null]);
     for (const row of rows) {
       try {
