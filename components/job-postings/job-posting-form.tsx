@@ -90,7 +90,7 @@ const selectClass =
 
 const ERROR_TEXT: Record<string, string> = {
   deadline: "Choose a deadline in the future.",
-  openings: "Enter a whole number of 1 or more.",
+  openings: "Enter a whole number of 1 or more (up to 2,147,483,647).",
 };
 
 export function JobPostingForm({

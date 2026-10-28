@@ -21,6 +21,9 @@ async function run(
     if (error.reason === "denied") redirect(NO_ACCESS_PATH);
     if (error.reason === "invalid") redirect(LOGIN_PATH);
     revalidatePath("/job-templates", "layout");
+    if (error.reason === "validation") {
+      return { error: "Complete the highlighted fields.", fieldErrors: error.fieldErrors };
+    }
     return {
       error:
         error.reason === "not-found"
