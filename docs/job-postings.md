@@ -211,3 +211,18 @@ Templates retain the text and `startPosting` copies it independently into a Draf
 Publishing does not require a schedule. Existing forms omit this backend field,
 so editing other content preserves it; Staff controls and Careers rendering are
 separate UI work.
+
+## Direct publication (#64)
+
+`createAndPublish(fields)` creates a brand-new Open Job Posting without saving a
+Draft first. It requires the same nonblank fields and future deadline as
+`publish(id)`, returns all invalid field errors together, and rechecks Portal
+access. Optional content follows the same defaults and Required Document
+normalisation as `saveDraft`.
+
+The insert, first-published timestamp, single `job_posting.published` Audit Event
+and first-publish announcement commit in one SQL statement. Any write failure
+leaves none of them behind; there is no separate `job_posting.created` event.
+Callers schedule `retryJobPostingAnnouncements` as for Draft publication.
+Careers visibility remains `status = 'open' AND deadline > now()`.
+No new migration is required.
