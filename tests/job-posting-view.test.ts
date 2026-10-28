@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canDelete, formatPosted, STATUS_FILTERS, STATUS_LABEL, statusCounts, statusFromParam } from "@/lib/job-posting-view";
+import { canDelete, formatApplicants, formatPosted, STATUS_FILTERS, STATUS_LABEL, statusCounts, statusFromParam } from "@/lib/job-posting-view";
 
 describe("job posting list view", () => {
   it("labels Open as Published everywhere", () => {
@@ -28,5 +28,11 @@ describe("job posting list view", () => {
   it("shows the first-published day, or a dash for Drafts and historical rows", () => {
     expect(formatPosted(new Date("2026-03-14T02:00:00Z"))).toBe("Mar 14, 2026");
     expect(formatPosted(null)).toBe("—");
+  });
+
+  it("shows the Applicant count, or a dash for Drafts", () => {
+    expect(formatApplicants({ status: "open", applicantCount: 7 })).toBe("7");
+    expect(formatApplicants({ status: "closed", applicantCount: 0 })).toBe("0");
+    expect(formatApplicants({ status: "draft", applicantCount: 0 })).toBe("—");
   });
 });

@@ -42,3 +42,7 @@ export const formatPosted = (firstPublishedAt: Date | null) =>
   firstPublishedAt
     ? firstPublishedAt.toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })
     : "—";
+
+/** How many Applicants applied; a Draft has none to show, so it gets a dash. */
+export const formatApplicants = (posting: { status: JobPostingStatus; applicantCount: number }) =>
+  posting.status === "draft" ? "—" : String(posting.applicantCount);
