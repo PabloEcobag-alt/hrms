@@ -140,3 +140,19 @@ Each maintenance invocation snapshots up to 20 announcements and attempts up to
 50 sends with five-second timeouts and capped retry backoff. Larger audiences
 continue on subsequent invocations. A service outage can delay the publication
 Audit Event but cannot roll back or delay the publish response.
+
+## First-published timestamp (#50)
+
+Apply `0005-job-posting-first-published.sql` with `npm run db:migrate` before
+deploying this code. It adds nullable `public.job_postings.first_published_at`
+(`timestamptz`) with no default or backfill. Careers must include this nullable
+column in its schema declaration and preserve it in future migrations.
+Historical Open postings retain `NULL`, including after edits or closure.
+
+Every posting returned by the module includes `firstPublishedAt: Date | null`.
+Drafts, including those started from templates, have `null`. A successful first
+publish records the database clock atomically with the Draft → Open transition;
+failed publishing leaves it unset. Edits, closing, filling, deadline expiry and
+announcement delivery never change it. It is distinct from `updated_at` and
+`announced_at`, and cannot be supplied through content patches. Rolling back
+application code can leave the added column in place.
