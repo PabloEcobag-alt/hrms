@@ -99,6 +99,8 @@ Edit, delete and start refuse missing ids with `JobTemplateError("not-found")`;
 access failures use `denied`, `invalid` or `unavailable`.
 
 Apply `0002-job-templates.sql` with `npm run db:migrate` before using templates.
-It adds `public.job_templates` without changing existing Careers tables or rows.
+It creates `public.job_templates` when absent. If Careers already provisioned the
+table, it preserves its rows and sets the legacy `status` column default to `draft`
+so content-only saves remain compatible. HRMS does not expose that legacy status.
 Application rollback can leave the added table in place. Auditing remains in its
 separate follow-up ticket.

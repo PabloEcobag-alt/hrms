@@ -294,3 +294,25 @@ it("rechecks Portal access on every template operation and fails closed", async 
   expect(await jobPostingsFor(freshHandle, db).list()).toEqual([]);
   await expect(jobTemplatesFor(undefined, db).list()).rejects.toMatchObject({ reason: "invalid" });
 });
+
+it("adopts the existing Careers template table without losing templates", async () => {
+  const legacy = new PGlite();
+  try {
+    await legacy.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
+    await legacy.exec(`CREATE TABLE job_templates (LIKE job_postings INCLUDING ALL);
+      ALTER TABLE job_templates DROP COLUMN deadline;
+      ALTER TABLE job_templates ADD COLUMN announced_at timestamptz;
+      INSERT INTO job_templates (id,title,department,description,requirements,employment_type,location,required_documents,screening_criteria,status)
+      VALUES ('legacy','Existing role','','','','','','[]','[]','draft');`);
+    const migration = await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8");
+    await legacy.exec(migration);
+    await legacy.exec(migration);
+    const templates = jobTemplatesFor(handle, legacy);
+    expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
+    const saved = await templates.create({ title: "New role" });
+    expect(saved).toMatchObject({ title: "New role" });
+    expect(await templates.list()).toHaveLength(2);
+  } finally {
+    await legacy.close();
+  }
+});
