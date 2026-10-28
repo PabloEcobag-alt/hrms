@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { Bookmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,14 +25,12 @@ import {
 } from "@/lib/job-posting-view";
 import {
   JobPostingError,
-  JobTemplateError,
   type JobPosting,
   type JobPostingListItem,
   type JobPostingStatus,
 } from "@/lib/job-postings";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
-import { templatesForRequest } from "@/lib/portal/templates";
 
 const formatDeadline = (deadline: Date | null) =>
   deadline
@@ -58,24 +57,27 @@ function Notice({
   );
 }
 
+const HEAD = "h-auto px-0 py-[6px] text-xs font-medium text-muted-foreground";
+const CELL = "px-0 py-[11px] text-sm text-foreground";
+
 function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
   return (
-    <Table>
+    <Table className="table-fixed">
       <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>Job</TableHead>
-          <TableHead>Location</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Posted</TableHead>
-          <TableHead>Deadline</TableHead>
-          <TableHead>Applicants</TableHead>
-          <TableHead>Status</TableHead>
+        <TableRow className="border-border-subtle hover:bg-transparent">
+          <TableHead className={`${HEAD} w-[250px]`}>Job</TableHead>
+          <TableHead className={`${HEAD} w-[200px]`}>Location</TableHead>
+          <TableHead className={`${HEAD} w-[110px]`}>Type</TableHead>
+          <TableHead className={`${HEAD} w-[110px]`}>Applicants</TableHead>
+          <TableHead className={`${HEAD} w-[120px]`}>Posted</TableHead>
+          <TableHead className={`${HEAD} w-[120px]`}>Deadline</TableHead>
+          <TableHead className={HEAD}>Status</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {postings.map((posting) => (
-          <TableRow key={posting.id} className="relative">
-            <TableCell>
+          <TableRow key={posting.id} className="relative border-border-subtle">
+            <TableCell className={CELL}>
               {/* One link per row: its ::after covers the whole row. */}
               <Link
                 href={`/job-postings/${posting.id}`}
@@ -83,16 +85,22 @@ function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
               >
                 {titleOf(posting)}
               </Link>
-              <p className="text-body-sm text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {formatSubtitle(posting)}
               </p>
             </TableCell>
-            <TableCell>{posting.location || "—"}</TableCell>
-            <TableCell>{posting.employmentType || "—"}</TableCell>
-            <TableCell>{formatPosted(posting.firstPublishedAt)}</TableCell>
-            <TableCell>{formatDeadline(posting.deadline)}</TableCell>
-            <TableCell>{formatApplicants(posting)}</TableCell>
-            <TableCell>
+            <TableCell className={CELL}>{posting.location || "—"}</TableCell>
+            <TableCell className={CELL}>{posting.employmentType || "—"}</TableCell>
+            <TableCell className={`${CELL} ${posting.status === "draft" ? "text-muted-foreground" : ""}`}>
+              {formatApplicants(posting)}
+            </TableCell>
+            <TableCell className={`${CELL} ${posting.firstPublishedAt ? "" : "text-muted-foreground"}`}>
+              {formatPosted(posting.firstPublishedAt)}
+            </TableCell>
+            <TableCell className={`${CELL} ${posting.deadline ? "" : "text-muted-foreground"}`}>
+              {formatDeadline(posting.deadline)}
+            </TableCell>
+            <TableCell className={CELL}>
               <Badge variant={STATUS_BADGE[posting.status]}>
                 {STATUS_LABEL[posting.status]}
               </Badge>
@@ -101,6 +109,29 @@ function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+function Header({ counts }: { counts?: Record<string, number> }) {
+  return (
+    <div className="flex items-center gap-sm">
+      <div className="flex-1">
+        <h1 className="text-2xl font-semibold text-foreground">Job postings</h1>
+        <p className="text-sm text-muted-foreground">
+          {counts
+            ? `${counts[""]} ${counts[""] === 1 ? "role" : "roles"} · ${counts.open} open`
+            : "\u00a0"}
+        </p>
+      </div>
+      <Button variant="outline" className="rounded-lg px-[14px] py-[9px]" asChild>
+        <Link href="/job-templates">
+          <Bookmark /> Templates
+        </Link>
+      </Button>
+      <Button className="rounded-lg px-[14px] py-[9px] font-medium shadow-none" asChild>
+        <Link href="/job-postings/new">New job</Link>
+      </Button>
+    </div>
   );
 }
 
@@ -117,11 +148,14 @@ async function Listing({
   } catch (error) {
     if (!(error instanceof JobPostingError)) throw error;
     return (
-      <Card>
-        <p role="alert" className="p-xl text-center text-destructive">
-          Job Postings could not be loaded. Please try again in a moment.
-        </p>
-      </Card>
+      <>
+        <Header />
+        <Card className="rounded-xl shadow-none">
+          <p role="alert" className="p-xl text-center text-destructive">
+            Job Postings could not be loaded. Please try again in a moment.
+          </p>
+        </Card>
+      </>
     );
   }
 
@@ -131,19 +165,11 @@ async function Listing({
     ? matching.filter((posting) => posting.status === status)
     : matching;
 
-  // The hint is only useful once a template exists; a failed lookup just hides it.
-  const hasTemplates = await (await templatesForRequest())
-    .list()
-    .then((templates) => templates.length > 0)
-    .catch((error) => {
-      if (!(error instanceof JobTemplateError)) throw error;
-      return false;
-    });
-
   return (
     <>
+      <Header counts={counts} />
       <JobPostingFilters counts={counts}>
-        <Card className="overflow-auto p-md">
+        <Card className="flex flex-col gap-[14px] overflow-auto rounded-xl p-[20px] shadow-none">
           {postings.length === 0 ? (
             status || search ? (
               <Notice>
@@ -163,14 +189,13 @@ async function Listing({
           ) : (
             <PostingsTable postings={postings} />
           )}
+          <p className="rounded-lg bg-muted px-[12px] py-[10px] text-xs text-muted-foreground">
+            Saved templates keep the role, department, description and
+            requirements. Pick one from the Job title field when you create a
+            new job.
+          </p>
         </Card>
       </JobPostingFilters>
-      {hasTemplates && (
-        <p className="text-body-sm text-muted-foreground">
-          Pick a saved Job Template in the Title field of New Job Posting, or
-          manage them under Job Templates.
-        </p>
-      )}
     </>
   );
 }
@@ -184,25 +209,15 @@ export default async function Page({
     Array.isArray(value) ? value[0] : value;
 
   return (
-    <div className="flex flex-col gap-lg p-md sm:p-lg">
-      <div className="flex items-start justify-between gap-md">
-        <div>
-          <h1 className="text-headline-md">Job Postings</h1>
-          <p className="text-body-sm text-muted-foreground">
-            Roles Staff write here. Applicants see a Job Posting on Careers once
-            it is Published.
-          </p>
-        </div>
-        <div className="flex items-center gap-sm">
-          <Button variant="outline" asChild>
-            <Link href="/job-templates">Job Templates</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/job-postings/new">New Job Posting</Link>
-          </Button>
-        </div>
-      </div>
-      <Suspense fallback={<TableSkeleton columns={7} />}>
+    <div className="flex flex-col gap-[20px] px-md py-[28px] sm:px-xl">
+      <Suspense
+        fallback={
+          <>
+            <Header />
+            <TableSkeleton columns={7} />
+          </>
+        }
+      >
         <Listing
           status={statusFromParam(one(status))}
           search={one(q)?.trim() || undefined}

@@ -41,7 +41,7 @@ export function JobPostingFilters({ counts, children }: { counts: Record<string,
               <TabsTrigger
                 key={filter.value}
                 value={filter.value}
-                className="px-md py-sm data-[state=active]:bg-accent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                className="rounded-lg px-[14px] py-[8px] text-muted-foreground data-[state=active]:bg-accent data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
                 {filter.label} {counts[filter.value] ?? 0}
               </TabsTrigger>

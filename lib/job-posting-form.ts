@@ -1,4 +1,4 @@
-import type { JobPostingFields, JobPostingStatus, JobTemplateFields, PostingSubmitOptions } from "./job-postings";
+import type { JobPostingFields, JobPostingStatus, JobTemplateFields } from "./job-postings";
 
 export const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship"];
 
@@ -133,9 +133,4 @@ export function templateSummary(
           ? `up to ${peso(salaryTo)}`
           : "";
   return [template.department, template.employmentType, template.location, salary].filter(Boolean).join(" · ");
-}
-
-/** The ticked "Save as template" checkbox and its name; an unticked box saves no template. */
-export function submitOptionsFromForm(data: FormData): PostingSubmitOptions {
-  return data.get("saveAsTemplate") ? { saveAsTemplate: { name: text(data, "templateName") } } : {};
 }
