@@ -11,7 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +20,7 @@ import type { FormState } from "@/app/(hrms)/job-postings/actions";
 import { DeadlinePicker } from "./deadline-picker";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { PostingStatusButton } from "./posting-status-button";
+import { RequiredDocuments } from "./required-documents";
 
 type Props = {
   action?: (state: FormState, data: FormData) => Promise<FormState>;
@@ -146,9 +146,8 @@ export function JobPostingForm({
     ]),
   ) as Record<string, string>;
   const sections = splitRequirements(posting?.requirements ?? "");
-  // A new posting starts with the defaults ticked; saved documents outside them stay listed.
+  // A new posting starts with the defaults ticked.
   const checkedDocuments = posting ? (posting.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
-  const requiredDocumentOptions = [...new Set([...DEFAULT_REQUIRED_DOCUMENTS, ...checkedDocuments])];
   // Marks an input as invalid for assistive tech and styling.
   const invalid = (name: string, errorKey = name) =>
     errors[errorKey]
@@ -295,22 +294,7 @@ export function JobPostingForm({
           title="Requirements and screening"
           description="Optional. Applicants attach each required Document when they apply."
         >
-          <fieldset className="flex flex-col gap-xs">
-            <legend className="text-sm font-medium">Required Documents</legend>
-            {requiredDocumentOptions.map((document) => (
-              <div key={document} className="flex items-center gap-xs">
-                <Checkbox
-                  id={`requiredDocuments-${document}`}
-                  name="requiredDocuments"
-                  value={document}
-                  defaultChecked={checkedDocuments.includes(document)}
-                />
-                <Label htmlFor={`requiredDocuments-${document}`} className="font-normal">
-                  {document}
-                </Label>
-              </div>
-            ))}
-          </fieldset>
+          <RequiredDocuments checked={checkedDocuments} />
           <Field
             name="screeningCriteria"
             label="Screening criteria (one per line)"

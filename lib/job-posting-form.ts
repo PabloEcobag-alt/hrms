@@ -89,3 +89,16 @@ export function templateFieldsFromForm(data: FormData): JobTemplateFields {
   delete fields.deadline;
   return fields as JobTemplateFields;
 }
+
+/** Adds a custom Required Document to the listed ones; blanks and case-insensitive duplicates are refused. */
+export function addRequiredDocument(
+  documents: string[],
+  name: string,
+): { documents: string[] } | { error: string } {
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Enter a document name." };
+  if (documents.some((document) => document.toLowerCase() === trimmed.toLowerCase())) {
+    return { error: "That document is already listed." };
+  }
+  return { documents: [...documents, trimmed] };
+}

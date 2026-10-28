@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deadlineInputValue, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm } from "@/lib/job-posting-form";
+import { addRequiredDocument, deadlineInputValue, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm } from "@/lib/job-posting-form";
 
 const form = (entries: Record<string, string | string[]>) => {
   const data = new FormData();
@@ -117,5 +117,19 @@ describe("job template form", () => {
     expect(fields).not.toHaveProperty("deadline");
     expect(templateFieldsFromForm(form({ openings: "4" })).openings).toBe(4);
     expect(templateFieldsFromForm(form({ salaryFrom: "100", salaryTo: "200" }))).toMatchObject({ salaryFrom: 100, salaryTo: 200 });
+  });
+});
+
+describe("addRequiredDocument", () => {
+  it("adds a trimmed custom document to the list", () => {
+    expect(addRequiredDocument(["Resume or CV"], "  NBI clearance ")).toEqual({ documents: ["Resume or CV", "NBI clearance"] });
+  });
+
+  it("rejects a blank name", () => {
+    expect(addRequiredDocument(["Resume or CV"], "   ")).toEqual({ error: "Enter a document name." });
+  });
+
+  it("rejects a duplicate regardless of case", () => {
+    expect(addRequiredDocument(["Resume or CV"], "resume or cv")).toEqual({ error: "That document is already listed." });
   });
 });
