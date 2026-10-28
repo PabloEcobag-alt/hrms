@@ -200,6 +200,42 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     throw new JobPostingError("validation", errors);
   }
 
+  async function create(fields: Partial<JobPostingFields>, publish: boolean): Promise<JobPosting> {
+    const staff = await authorize();
+    if (publish) {
+      const errors: Partial<Record<keyof JobPostingFields, string>> = {};
+      for (const field of ["title", "department", "employmentType", "location", "description"] as const) {
+        if (!fields[field]?.trim()) errors[field] = `${field} is required`;
+      }
+      if (!fields.deadline || !Number.isFinite(fields.deadline.getTime()) || fields.deadline.getTime() <= Date.now()) {
+        errors.deadline = "deadline must be a valid future date";
+      }
+      for (const validate of [() => validatePostingOpenings(fields), () => validateSalary(fields, JobPostingError)]) {
+        try { validate(); } catch (error) {
+          if (!(error instanceof JobPostingError)) throw error;
+          Object.assign(errors, error.fieldErrors);
+        }
+      }
+      if (Object.keys(errors).length) throw new JobPostingError("validation", errors);
+    } else {
+      validatePostingOpenings(fields);
+      validateSalary(fields, JobPostingError);
+    }
+    const { rows } = await salaryMutation<JobPosting>(db, staff, publish ? "job_posting.published" : "job_posting.created",
+      `INSERT INTO public.job_postings
+        (id, title, department, employment_type, location, description, requirements,
+         required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status, first_published_at)
+       SELECT $1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13,$14,$15,CASE WHEN $15 = 'open' THEN clock_timestamp() END
+       WHERE $15 = 'draft' OR $14::timestamptz > clock_timestamp() RETURNING ${columns}`,
+      [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
+        fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
+        JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
+        fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null, publish ? "open" : "draft"],
+    );
+    if (!rows[0]) throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
+    return rows[0];
+  }
+
   return {
     publish: (id: string) => change(id, "draft", {}, "open"),
     editOpen: (id: string, fields: Partial<JobPostingFields>) => change(id, "open", fields, "open"),
@@ -209,22 +245,8 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       await authorize();
       await expire();
     },
-    async saveDraft(fields: Partial<JobPostingFields>): Promise<JobPosting> {
-      const staff = await authorize();
-      validatePostingOpenings(fields);
-      validateSalary(fields, JobPostingError);
-      const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.created",
-        `INSERT INTO public.job_postings
-          (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13,$14,'draft') RETURNING ${columns}`,
-        [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
-          fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
-          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
-          fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null],
-      );
-      return rows[0];
-    },
+    saveDraft: (fields: Partial<JobPostingFields>) => create(fields, false),
+    createAndPublish: (fields: Partial<JobPostingFields>) => create(fields, true),
     async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
       const staff = await authorize();
       validatePostingOpenings(fields);

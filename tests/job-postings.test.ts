@@ -677,3 +677,52 @@ it("normalises default and custom Required Documents on every content write", as
   expect((await templates.startPosting(template.id)).requiredDocuments).toEqual([]);
   expect((await postings.editOpen(draft.id, { requiredDocuments: [] })).requiredDocuments).toEqual([]);
 });
+
+
+it("creates and publishes directly with one publish Audit Event and one first announcement", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const posting = await postings.createAndPublish({ ...publishable, requiredDocuments: [" CV ", "cv"], openings: 2, salaryFrom: 20000, workSchedule: "Flexible" });
+  expect(posting).toMatchObject({ ...publishable, status: "open", firstPublishedAt: expect.any(Date), requiredDocuments: ["CV"], openings: 2, salaryFrom: 20000, salaryTo: null, workSchedule: "Flexible" });
+  expect(await postings.read(posting.id)).toEqual(posting);
+  expect((await db.query("SELECT payload->>'action' AS action FROM hrms_audit_outbox")).rows).toEqual([{ action: "job_posting.published" }]);
+  expect((await db.query("SELECT posting_id FROM hrms_posting_announcements")).rows).toEqual([{ posting_id: posting.id }]);
+  await retryJobPostingAnnouncements(db);
+  await retryJobPostingAnnouncements(db);
+  expect(auditRequests).toHaveLength(1);
+  expect(auditRequests[0]).toMatchObject({ action: "job_posting.published", metadata: { applicants_notified: true } });
+  await postings.editOpen(posting.id, { title: "Updated" });
+  expect((await db.query("SELECT posting_id FROM hrms_posting_announcements")).rows).toHaveLength(1);
+});
+
+
+it("reports every invalid direct-publication field and leaves no posting or delivery records", async () => {
+  const postings = jobPostingsFor(handle, db);
+  await expect(postings.createAndPublish({ title: " ", deadline: new Date("invalid"), openings: 0, salaryFrom: -1, salaryTo: -2 })).rejects.toMatchObject({
+    reason: "validation", fieldErrors: Object.fromEntries(["title", "department", "employmentType", "location", "description", "deadline", "openings", "salaryFrom", "salaryTo"].map((field) => [field, expect.any(String)])),
+  });
+  expect(await postings.list()).toEqual([]);
+  expect((await db.query("SELECT * FROM hrms_audit_outbox")).rows).toEqual([]);
+  expect((await db.query("SELECT * FROM hrms_posting_announcements")).rows).toEqual([]);
+});
+
+it("rolls direct publication back when announcement queuing fails", async () => {
+  await db.exec("ALTER TABLE hrms_posting_announcements ADD CONSTRAINT reject_queue CHECK (false)");
+  await expect(jobPostingsFor(handle, db).createAndPublish(publishable)).rejects.toBeDefined();
+  expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+  expect((await db.query("SELECT * FROM hrms_audit_outbox")).rows).toEqual([]);
+});
+
+it("rechecks Portal access before direct publication", async () => {
+  for (const state of ["denied", "invalid", "unavailable"] as const) {
+    portal.unavailable = state === "unavailable";
+    const restricted = jobPostingsFor(state === "denied" ? portal.signIn(ada, ["Attendance"]) : state === "invalid" ? undefined : handle, db);
+    await expect(restricted.createAndPublish(publishable)).rejects.toMatchObject({ reason: state });
+  }
+  portal.unavailable = false;
+  expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+});
+
+it.each([null, new Date("2000-01-01"), new Date("invalid")])("refuses a missing, past or invalid direct-publication deadline (%s)", async (deadline) => {
+  await expect(jobPostingsFor(handle, db).createAndPublish({ ...publishable, deadline })).rejects.toMatchObject({ reason: "validation", fieldErrors: { deadline: expect.any(String) } });
+  expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+});
