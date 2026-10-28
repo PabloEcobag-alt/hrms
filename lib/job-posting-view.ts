@@ -46,3 +46,9 @@ export const formatPosted = (firstPublishedAt: Date | null) =>
 /** How many Applicants applied; a Draft has none to show, so it gets a dash. */
 export const formatApplicants = (posting: { status: JobPostingStatus; applicantCount: number }) =>
   posting.status === "draft" ? "—" : String(posting.applicantCount);
+
+/** "Department · N openings" under the title; either part is left out when unset. */
+export function formatSubtitle(posting: { department: string; openings: number | null }): string {
+  const openings = posting.openings === null ? "" : `${posting.openings} ${posting.openings === 1 ? "opening" : "openings"}`;
+  return [posting.department, openings].filter(Boolean).join(" · ") || "—";
+}
