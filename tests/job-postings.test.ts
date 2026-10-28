@@ -54,7 +54,7 @@ afterEach(async () => {
 
 it("saves an empty Draft and reads it from another module instance", async () => {
   const posting = await jobPostingsFor(handle, db).saveDraft({});
-  expect(posting).toMatchObject({ status: "draft", title: "", deadline: null, requiredDocuments: [], screeningCriteria: [] });
+  expect(posting).toMatchObject({ status: "draft", title: "", deadline: null, responsibilities: [], benefits: [], requiredDocuments: [], screeningCriteria: [] });
   expect(posting.id).toBeTruthy();
   expect(await jobPostingsFor(handle, db).read(posting.id)).toEqual(posting);
 });
@@ -117,11 +117,11 @@ it("deletes a Draft and refuses to edit or delete a missing Job Posting", async 
 it.each(["open", "closed", "filled"] as const)("preserves an existing %s Job Posting and refuses Draft mutations", async (status) => {
   // External fixture: these postings predate HRMS; publishing is ticket #31.
   await db.query(`INSERT INTO job_postings
-    (id,title,department,employment_type,location,description,requirements,required_documents,screening_criteria,deadline,status)
-    VALUES ($1,'Existing role','People','Full time','Manila','Recruitment','', '[]','[]','2030-01-01',$2)`, [status, status]);
+    (id,title,department,employment_type,location,description,requirements,required_documents,screening_criteria,deadline,status,responsibilities,benefits)
+    VALUES ($1,'Existing role','People','Full time','Manila','Recruitment','', '[]','[]','2030-01-01',$2,'["Legacy responsibility"]','["Legacy benefit"]')`, [status, status]);
   const postings = jobPostingsFor(handle, db);
   const original = await postings.read(status);
-  expect(original).toMatchObject({ firstPublishedAt: null });
+  expect(original).toMatchObject({ firstPublishedAt: null, responsibilities: ["Legacy responsibility"], benefits: ["Legacy benefit"] });
   expect(await postings.list({ status })).toEqual([{ ...original, applicantCount: 0 }]);
   await expect(postings.deleteDraft(status)).rejects.toMatchObject({ reason: "not-draft" });
   await expect(postings.editDraft(status, { title: "Changed" })).rejects.toMatchObject({ reason: "not-draft" });
@@ -787,4 +787,41 @@ it.each(["editDraft", "publish"] as const)("%s preserves the original Draft on i
   expect(await postings.read(draft.id)).toEqual(draft);
   expect(await jobTemplatesFor(handle, db).list()).toEqual([]);
   expect((await db.query("SELECT * FROM hrms_posting_announcements")).rows).toEqual([]);
+});
+
+
+it("round-trips Responsibilities and Benefits when saving a Draft", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft({
+    title: "Recruiter", responsibilities: ["Interview Applicants", "Write reports"], benefits: ["Health cover"],
+  });
+  expect(draft).toMatchObject({ responsibilities: ["Interview Applicants", "Write reports"], benefits: ["Health cover"] });
+  expect(await jobPostingsFor(handle, db).read(draft.id)).toEqual(draft);
+  expect(await postings.list()).toEqual([{ ...draft, applicantCount: 0 }]);
+});
+
+
+it.each(["editDraft", "editOpen"] as const)("%s patches, preserves and clears Responsibilities and Benefits independently", async (operation) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft({ ...publishable, responsibilities: ["Interview"], benefits: ["Health cover"] });
+  if (operation === "editOpen") await postings.publish(draft.id);
+  expect(await postings[operation](draft.id, { responsibilities: ["Train Staff"], benefits: ["Paid leave"] }))
+    .toMatchObject({ responsibilities: ["Train Staff"], benefits: ["Paid leave"] });
+  expect(await postings[operation](draft.id, { title: "Senior Recruiter", responsibilities: undefined, benefits: undefined }))
+    .toMatchObject({ responsibilities: ["Train Staff"], benefits: ["Paid leave"] });
+  expect(await postings[operation](draft.id, { responsibilities: [] }))
+    .toMatchObject({ responsibilities: [], benefits: ["Paid leave"] });
+  expect(await postings[operation](draft.id, { responsibilities: ["Welcome Applicants"], benefits: [] }))
+    .toMatchObject({ responsibilities: ["Welcome Applicants"], benefits: [] });
+  expect(await postings.read(draft.id)).toMatchObject({ responsibilities: ["Welcome Applicants"], benefits: [] });
+});
+
+
+it("publishes with omitted or explicitly empty Responsibilities and Benefits", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  expect(await postings.publish(draft.id)).toMatchObject({ status: "open", responsibilities: [], benefits: [] });
+  const direct = await postings.createAndPublish({ ...publishable, responsibilities: [], benefits: [] });
+  expect(direct).toMatchObject({ status: "open", responsibilities: [], benefits: [] });
+  expect(await postings.editOpen(direct.id, { title: "Updated role" })).toMatchObject({ responsibilities: [], benefits: [] });
 });

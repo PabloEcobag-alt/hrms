@@ -15,6 +15,8 @@ export type JobPostingFields = {
   location: string;
   description: string;
   requirements: string;
+  responsibilities: string[];
+  benefits: string[];
   requiredDocuments: string[];
   screeningCriteria: string[];
   deadline: Date | null;
@@ -58,7 +60,7 @@ export class JobPostingError extends Error {
 }
 
 const columns = `id, title, department, employment_type AS "employmentType",
-  location, description, requirements, required_documents AS "requiredDocuments",
+  location, description, requirements, responsibilities, benefits, required_documents AS "requiredDocuments",
   screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", work_schedule AS "workSchedule", openings, deadline, status, first_published_at AS "firstPublishedAt", updated_at AS "updatedAt"`;
 
 /** Internal maintenance entry point; callers must authenticate the scheduled request. */
@@ -73,6 +75,8 @@ const fieldColumns = {
   requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline", openings: "openings",
   salaryFrom: "salary_from", salaryTo: "salary_to", workSchedule: "work_schedule",
 } as const;
+const postingFieldColumns = { ...fieldColumns, responsibilities: "responsibilities", benefits: "benefits" } as const;
+
 // Match the positive PostgreSQL integer range before sending values to the driver.
 function invalidOpenings(value: number | null | undefined): boolean {
   return value !== undefined && value !== null &&
@@ -178,16 +182,16 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     if (fields.deadline && !Number.isFinite(fields.deadline.getTime())) {
       throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
     }
-    const names = fieldColumns;
+    const names = postingFieldColumns;
     const values: unknown[] = [id, status, target, whitespace];
     const expressions: Record<string, string> = { ...names };
     const updates = ["status = $3", "updated_at = clock_timestamp()"];
     if (status === "draft" && target === "open") {
       updates.push("first_published_at = COALESCE(first_published_at, clock_timestamp())");
     }
-    for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
+    for (const field of Object.keys(names) as (keyof typeof names)[]) {
       if (fields[field] === undefined) continue;
-      const json = field === "requiredDocuments" || field === "screeningCriteria";
+      const json = field === "requiredDocuments" || field === "screeningCriteria" || field === "responsibilities" || field === "benefits";
       values.push(json ? JSON.stringify(fields[field]) : fields[field]);
       const expression = `$${values.length}${json ? "::jsonb" : field === "deadline" ? "::timestamptz" : field === "openings" ? "::integer" : field === "salaryFrom" || field === "salaryTo" ? "::double precision" : "::text"}`;
       expressions[field] = expression;
@@ -236,13 +240,14 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     const { rows } = await salaryMutation<JobPosting>(db, staff, publish ? "job_posting.published" : "job_posting.created",
       `INSERT INTO public.job_postings
         (id, title, department, employment_type, location, description, requirements,
-         required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status, first_published_at)
-       SELECT $1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13,$14,$15,CASE WHEN $15 = 'open' THEN clock_timestamp() END
+         required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status, first_published_at, responsibilities, benefits)
+       SELECT $1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13,$14,$15,CASE WHEN $15 = 'open' THEN clock_timestamp() END,$16::jsonb,$17::jsonb
        WHERE $15 = 'draft' OR $14::timestamptz > clock_timestamp() RETURNING ${columns}`,
       [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
         fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
         JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
-        fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null, publish ? "open" : "draft"], templateName,
+        fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null, publish ? "open" : "draft",
+        JSON.stringify(fields.responsibilities ?? []), JSON.stringify(fields.benefits ?? [])], templateName,
     );
     if (!rows[0]) throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
     return rows[0];
@@ -264,12 +269,12 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       const templateName = templateNameFor(options);
       validatePostingOpenings(fields);
       validateSalary(fields, JobPostingError);
-      const names = fieldColumns;
+      const names = postingFieldColumns;
       const values: unknown[] = [id];
       const updates: string[] = [`required_documents = ${normalisedDocuments("required_documents")}`];
-      for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
+      for (const field of Object.keys(names) as (keyof typeof names)[]) {
         if (fields[field] === undefined) continue;
-        const json = field === "requiredDocuments" || field === "screeningCriteria";
+        const json = field === "requiredDocuments" || field === "screeningCriteria" || field === "responsibilities" || field === "benefits";
         values.push(json ? JSON.stringify(fields[field]) : fields[field]);
         const expression = `$${values.length}${json ? "::jsonb" : ""}`;
         if (field === "requiredDocuments") updates[0] = `required_documents = ${normalisedDocuments(expression)}`;
@@ -317,7 +322,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
   };
 }
 
-export type JobTemplateFields = Omit<JobPostingFields, "deadline">;
+export type JobTemplateFields = Omit<JobPostingFields, "deadline" | "responsibilities" | "benefits">;
 export type JobTemplate = JobTemplateFields & { id: string; name: string | null; updatedAt: Date };
 
 export class JobTemplateError extends Error {
@@ -359,7 +364,7 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       if (invalidOpenings(fields.openings)) throw new JobTemplateError("validation", { openings: "openings must be a positive integer" });
       const values: unknown[] = [id];
       const updates: string[] = [`required_documents = ${normalisedDocuments("required_documents")}`];
-      for (const field of Object.keys(fieldColumns) as (keyof JobPostingFields)[]) {
+      for (const field of Object.keys(fieldColumns) as (keyof typeof fieldColumns)[]) {
         if (field === "deadline" || fields[field] === undefined) continue;
         const json = field === "requiredDocuments" || field === "screeningCriteria";
         values.push(json ? JSON.stringify(fields[field]) : fields[field]);
