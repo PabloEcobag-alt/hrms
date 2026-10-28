@@ -867,7 +867,6 @@ it("adds empty lists to existing Templates and can reapply the migration", async
   expect(await jobTemplatesFor(handle, db).list()).toMatchObject([{ id: "legacy-lists", title: "Cashier", responsibilities: [], benefits: [] }]);
 });
 
-
 it("recovers legacy Audit Events with their original time, key and username only once", async () => {
   const { retryJobPostingAuditDelivery } = await import("@/lib/job-postings");
   const legacy = {
@@ -905,7 +904,7 @@ it("retains a recovered Audit Event after rejection without resetting its retry 
     await retryJobPostingAuditDelivery(db);
     const retained = await db.query("SELECT * FROM hrms_audit_outbox");
     expect(retained.rows).toHaveLength(1);
-      await retryJobPostingAuditDelivery(db);
+    await retryJobPostingAuditDelivery(db);
     expect((await db.query("SELECT * FROM hrms_audit_outbox")).rows).toEqual(retained.rows);
     expect(rejected).toEqual([event]);
     vi.stubGlobal("fetch", boundary);
