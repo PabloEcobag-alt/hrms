@@ -1,8 +1,7 @@
 import { deliverAnnouncements } from "./job-posting-announcements";
 import { auditedMutation, retryJobPostingAudit } from "./job-posting-audit";
 import { randomUUID } from "node:crypto";
-import { Pool } from "pg";
-import { attachDatabasePool } from "@vercel/functions";
+import { database, type Database } from "./database";
 import { accessFor } from "./portal/access";
 
 export type PostingSubmitOptions = { saveAsTemplate?: { name?: string } };
@@ -36,22 +35,7 @@ export type JobPosting = JobPostingFields & {
 export type JobPostingListItem = JobPosting & { readonly applicantCount: number };
 
 /** A Postgres connection; tests supply disposable Postgres, never shared data. */
-export type PostingDatabase = {
-  query<T>(sql: string, values?: unknown[]): Promise<{ rows: T[] }>;
-};
-
-let pool: Pool | undefined;
-const database: PostingDatabase = {
-  async query<T>(sql: string, values?: unknown[]) {
-    if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-    if (!pool) {
-      pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
-      attachDatabasePool(pool);
-    }
-    const result = await pool.query(sql, values);
-    return { rows: result.rows as T[] };
-  },
-};
+export type PostingDatabase = Database;
 
 export class JobPostingError extends Error {
   constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "not-draft" | "not-open" | "validation", public readonly fieldErrors: Partial<Record<keyof JobPostingFields | "templateName", string>> = {}) {
