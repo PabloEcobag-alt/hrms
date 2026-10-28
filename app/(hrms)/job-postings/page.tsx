@@ -16,6 +16,7 @@ import { JobPostingFilters } from "@/components/job-postings/job-posting-filters
 import {
   STATUS_BADGE,
   STATUS_LABEL,
+  formatApplicants,
   formatPosted,
   statusCounts,
   statusFromParam,
@@ -24,6 +25,7 @@ import {
   JobPostingError,
   JobTemplateError,
   type JobPosting,
+  type JobPostingListItem,
   type JobPostingStatus,
 } from "@/lib/job-postings";
 import { postingsForRequest } from "@/lib/portal/postings";
@@ -55,7 +57,7 @@ function Notice({
   );
 }
 
-function PostingsTable({ postings }: { postings: JobPosting[] }) {
+function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
   return (
     <Table>
       <TableHeader>
@@ -65,6 +67,7 @@ function PostingsTable({ postings }: { postings: JobPosting[] }) {
           <TableHead>Type</TableHead>
           <TableHead>Posted</TableHead>
           <TableHead>Deadline</TableHead>
+          <TableHead>Applicants</TableHead>
           <TableHead>Status</TableHead>
         </TableRow>
       </TableHeader>
@@ -87,6 +90,7 @@ function PostingsTable({ postings }: { postings: JobPosting[] }) {
             <TableCell>{posting.employmentType || "—"}</TableCell>
             <TableCell>{formatPosted(posting.firstPublishedAt)}</TableCell>
             <TableCell>{formatDeadline(posting.deadline)}</TableCell>
+            <TableCell>{formatApplicants(posting)}</TableCell>
             <TableCell>
               <Badge variant={STATUS_BADGE[posting.status]}>
                 {STATUS_LABEL[posting.status]}
@@ -106,7 +110,7 @@ async function Listing({
   status?: JobPostingStatus;
   search?: string;
 }) {
-  let matching: JobPosting[];
+  let matching: JobPostingListItem[];
   try {
     matching = await (await postingsForRequest()).list({ search });
   } catch (error) {
@@ -197,7 +201,7 @@ export default async function Page({
           </Button>
         </div>
       </div>
-      <Suspense fallback={<TableSkeleton columns={6} />}>
+      <Suspense fallback={<TableSkeleton columns={7} />}>
         <Listing
           status={statusFromParam(one(status))}
           search={one(q)?.trim() || undefined}
