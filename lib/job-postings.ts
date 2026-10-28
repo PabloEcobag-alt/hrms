@@ -118,6 +118,17 @@ async function salaryMutation<T>(...args: Parameters<typeof auditedMutation<T>>)
 // ECMAScript trim whitespace, shared by SQL validation and field error reporting.
 const whitespace = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
+/** Normalise the resulting value inside the write, including legacy rows and partial edits.
+ * Keep the first spelling and original order when names differ only by case.
+ */
+function normalisedDocuments(expression: string): string {
+  return `(SELECT COALESCE(jsonb_agg(name ORDER BY position), '[]'::jsonb)
+    FROM (SELECT DISTINCT ON (lower(name)) name, position
+      FROM (SELECT btrim(value, '${whitespace}') AS name, position
+        FROM jsonb_array_elements_text(${expression}) WITH ORDINALITY AS documents(value, position)) trimmed
+      WHERE name <> '' ORDER BY lower(name), position) unique_documents)`;
+}
+
 /** Server-side interface. Pass the opaque Portal session handle from the request.
  * Each operation asks the Portal anew, so revocation takes effect immediately.
  */
@@ -156,7 +167,10 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       values.push(json ? JSON.stringify(fields[field]) : fields[field]);
       const expression = `$${values.length}${json ? "::jsonb" : field === "deadline" ? "::timestamptz" : field === "openings" ? "::integer" : field === "salaryFrom" || field === "salaryTo" ? "::double precision" : "::text"}`;
       expressions[field] = expression;
-      updates.push(`${names[field]} = ${expression}`);
+      updates.push(`${names[field]} = ${field === "requiredDocuments" ? normalisedDocuments(expression) : expression}`);
+    }
+    if (fields.requiredDocuments === undefined) {
+      updates.push(`required_documents = ${normalisedDocuments("required_documents")}`);
     }
     const required = ["title", "department", "employmentType", "location", "description"] as const;
     // Validate the resulting row inside the write, including concurrent edits.
@@ -203,7 +217,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
            required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14,'draft') RETURNING ${columns}`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13,$14,'draft') RETURNING ${columns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
           JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
@@ -217,17 +231,20 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       validateSalary(fields, JobPostingError);
       const names = fieldColumns;
       const values: unknown[] = [id];
-      const updates: string[] = [];
+      const updates: string[] = [`required_documents = ${normalisedDocuments("required_documents")}`];
       for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
         if (fields[field] === undefined) continue;
         const json = field === "requiredDocuments" || field === "screeningCriteria";
         values.push(json ? JSON.stringify(fields[field]) : fields[field]);
-        updates.push(`${names[field]} = $${values.length}${json ? "::jsonb" : ""}`);
+        const expression = `$${values.length}${json ? "::jsonb" : ""}`;
+        if (field === "requiredDocuments") updates[0] = `required_documents = ${normalisedDocuments(expression)}`;
+        else updates.push(`${names[field]} = ${expression}`);
       }
-      const sql = updates.length
-        ? `UPDATE public.job_postings SET ${updates.join(", ")}, updated_at = clock_timestamp()
-           WHERE id = $1 AND status = 'draft' RETURNING ${columns}`
-        : `SELECT ${columns} FROM public.job_postings WHERE id = $1 AND status = 'draft'`;
+      const updatedAt = values.length > 1 ? "clock_timestamp()"
+        : `CASE WHEN required_documents IS DISTINCT FROM ${normalisedDocuments("required_documents")}
+           THEN clock_timestamp() ELSE updated_at END`;
+      const sql = `UPDATE public.job_postings SET ${updates.join(", ")}, updated_at = ${updatedAt}
+           WHERE id = $1 AND status = 'draft' RETURNING ${columns}`;
       const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.updated", sql, values);
       if (!rows[0]) await draftMissing(id);
       return rows[0];
@@ -295,7 +312,7 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
         `INSERT INTO public.job_templates
           (id, title, department, employment_type, location, description, requirements,
            required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13) RETURNING ${templateColumns}`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13) RETURNING ${templateColumns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
           JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []), fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null],
@@ -306,17 +323,20 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       validateSalary(fields, JobTemplateError);
       if (invalidOpenings(fields.openings)) throw new JobTemplateError("validation", { openings: "openings must be a positive integer" });
       const values: unknown[] = [id];
-      const updates: string[] = [];
+      const updates: string[] = [`required_documents = ${normalisedDocuments("required_documents")}`];
       for (const field of Object.keys(fieldColumns) as (keyof JobPostingFields)[]) {
         if (field === "deadline" || fields[field] === undefined) continue;
         const json = field === "requiredDocuments" || field === "screeningCriteria";
         values.push(json ? JSON.stringify(fields[field]) : fields[field]);
-        updates.push(`${fieldColumns[field]} = $${values.length}${json ? "::jsonb" : ""}`);
+        const expression = `$${values.length}${json ? "::jsonb" : ""}`;
+        if (field === "requiredDocuments") updates[0] = `required_documents = ${normalisedDocuments(expression)}`;
+        else updates.push(`${fieldColumns[field]} = ${expression}`);
       }
-      const sql = updates.length
-        ? `UPDATE public.job_templates SET ${updates.join(", ")}, updated_at = clock_timestamp()
-           WHERE id = $1 RETURNING ${templateColumns}`
-        : `SELECT ${templateColumns} FROM public.job_templates WHERE id = $1`;
+      const updatedAt = values.length > 1 ? "clock_timestamp()"
+        : `CASE WHEN required_documents IS DISTINCT FROM ${normalisedDocuments("required_documents")}
+           THEN clock_timestamp() ELSE updated_at END`;
+      const sql = `UPDATE public.job_templates SET ${updates.join(", ")}, updated_at = ${updatedAt}
+           WHERE id = $1 RETURNING ${templateColumns}`;
       const { rows } = await salaryMutation<JobTemplate>(db, staff, "job_template.updated", sql, values);
       if (!rows[0]) throw new JobTemplateError("not-found");
       return rows[0];
@@ -333,7 +353,7 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
           (id, title, department, employment_type, location, description, requirements,
            required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status)
          SELECT $2, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, NULL, 'draft'
+           ${normalisedDocuments("required_documents")}, screening_criteria, openings, salary_from, salary_to, work_schedule, NULL, 'draft'
          FROM public.job_templates WHERE id = $1 RETURNING ${columns}`, [id, randomUUID()],
       );
       if (!rows[0]) throw new JobTemplateError("not-found");
