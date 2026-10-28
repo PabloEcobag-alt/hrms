@@ -34,6 +34,8 @@ describe("job posting form", () => {
       screeningCriteria: ["Cash handling"],
       deadline: new Date("2026-12-31T23:59:59.999Z"),
       openings: null,
+      salaryFrom: null,
+      salaryTo: null,
     });
   });
 
@@ -49,6 +51,8 @@ describe("job posting form", () => {
       screeningCriteria: [],
       deadline: null,
       openings: null,
+      salaryFrom: null,
+      salaryTo: null,
     });
   });
 
@@ -57,6 +61,12 @@ describe("job posting form", () => {
     expect(fieldsFromForm(form({ openings: "" })).openings).toBeNull();
     expect(fieldsFromForm(form({ openings: "2.5" })).openings).toBe(2.5);
     expect(fieldsFromForm(form({ openings: "abc" })).openings).toBeNaN();
+  });
+
+  it("reads the salary range in pesos, blank meaning unspecified and bad input left for the backend", () => {
+    expect(fieldsFromForm(form({ salaryFrom: " 16000 ", salaryTo: "18500.5" }))).toMatchObject({ salaryFrom: 16000, salaryTo: 18500.5 });
+    expect(fieldsFromForm(form({ salaryFrom: "", salaryTo: "  " }))).toMatchObject({ salaryFrom: null, salaryTo: null });
+    expect(fieldsFromForm(form({ salaryFrom: "abc" })).salaryFrom).toBeNaN();
   });
 
   it("formats a deadline for a date input", () => {
@@ -71,5 +81,6 @@ describe("job template form", () => {
     expect(fields).toMatchObject({ title: "Cashier", requiredDocuments: ["Resume", "NBI"] });
     expect(fields).not.toHaveProperty("deadline");
     expect(templateFieldsFromForm(form({ openings: "4" })).openings).toBe(4);
+    expect(templateFieldsFromForm(form({ salaryFrom: "100", salaryTo: "200" }))).toMatchObject({ salaryFrom: 100, salaryTo: 200 });
   });
 });
