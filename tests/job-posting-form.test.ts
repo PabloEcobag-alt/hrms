@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { deadlineInputValue, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm } from "@/lib/job-posting-form";
 
-const form = (entries: Record<string, string>) => {
+const form = (entries: Record<string, string | string[]>) => {
   const data = new FormData();
-  for (const [key, value] of Object.entries(entries)) data.set(key, value);
+  for (const [key, value] of Object.entries(entries)) {
+    for (const item of [value].flat()) data.append(key, item);
+  }
   return data;
 };
 
@@ -19,7 +21,7 @@ describe("job posting form", () => {
           summary: "Serve customers",
           responsibilities: "• Ring up sales",
           qualifications: "Friendly",
-          requiredDocuments: "Resume\r\n\n  NBI clearance \n",
+          requiredDocuments: ["Resume or CV", "", "  NBI clearance "],
           screeningCriteria: "Cash handling",
           deadline: "2026-12-31",
         }),
@@ -31,7 +33,7 @@ describe("job posting form", () => {
       location: "Manila",
       description: "Serve customers",
       requirements: "Responsibilities:\n• Ring up sales\n\nQualifications:\nFriendly",
-      requiredDocuments: ["Resume", "NBI clearance"],
+      requiredDocuments: ["Resume or CV", "NBI clearance"],
       screeningCriteria: ["Cash handling"],
       deadline: new Date("2026-12-31T23:59:59.999Z"),
       openings: null,
@@ -39,6 +41,10 @@ describe("job posting form", () => {
       salaryTo: null,
       workSchedule: null,
     });
+  });
+
+  it("reads no Required Documents when none are ticked", () => {
+    expect(fieldsFromForm(form({ title: "Cashier" })).requiredDocuments).toEqual([]);
   });
 
   it("turns missing or invalid values into empty fields so a Draft can clear them", () => {
@@ -106,7 +112,7 @@ describe("job description sections", () => {
 
 describe("job template form", () => {
   it("reads the content fields and never a deadline", () => {
-    const fields = templateFieldsFromForm(form({ title: " Cashier ", deadline: "2026-12-31", requiredDocuments: "Resume\nNBI" }));
+    const fields = templateFieldsFromForm(form({ title: " Cashier ", deadline: "2026-12-31", requiredDocuments: ["Resume", "NBI"] }));
     expect(fields).toMatchObject({ title: "Cashier", requiredDocuments: ["Resume", "NBI"] });
     expect(fields).not.toHaveProperty("deadline");
     expect(templateFieldsFromForm(form({ openings: "4" })).openings).toBe(4);

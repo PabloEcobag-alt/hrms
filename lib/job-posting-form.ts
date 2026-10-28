@@ -2,6 +2,9 @@ import type { JobPostingFields, JobTemplateFields } from "./job-postings";
 
 export const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship"];
 
+/** The Required Documents staff tick from; all are ticked on a new posting. */
+export const DEFAULT_REQUIRED_DOCUMENTS = ["Resume or CV", "Valid government ID", "Health certificate"];
+
 const text = (data: FormData, name: string) => String(data.get(name) ?? "").trim();
 const lines = (data: FormData, name: string) =>
   text(data, name)
@@ -25,7 +28,10 @@ export function fieldsFromForm(data: FormData): JobPostingFields {
       responsibilities: text(data, "responsibilities"),
       qualifications: text(data, "qualifications"),
     }),
-    requiredDocuments: lines(data, "requiredDocuments"),
+    requiredDocuments: data
+      .getAll("requiredDocuments")
+      .map((document) => String(document).trim())
+      .filter(Boolean),
     screeningCriteria: lines(data, "screeningCriteria"),
     deadline: deadline && !Number.isNaN(deadline.getTime()) ? deadline : null,
     openings: openingsFromForm(data),
