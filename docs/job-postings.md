@@ -208,6 +208,6 @@ it in future migrations. Application rollback can leave these additive columns.
 Server results expose `workSchedule: string | null`. Creation defaults omission
 to `null`; edits preserve omitted values and explicit `null` clears the schedule.
 Templates retain the text and `startPosting` copies it independently into a Draft.
-Publishing does not require a schedule. Existing forms omit this backend field,
-so editing other content preserves it; Staff controls and Careers rendering are
+Publishing does not require a schedule. The Staff form's Pay & schedule section
+has a Work schedule text field (#59); blank saves as `null`. Careers rendering is
 separate UI work.

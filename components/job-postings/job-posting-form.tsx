@@ -257,6 +257,15 @@ export function JobPostingForm({
               <PesoInput name="salaryTo" invalid={invalid("salaryTo")} defaultValue={posting?.salaryTo} />
             </Field>
           </div>
+          <Field name="workSchedule" label="Work schedule" error={errors.workSchedule}>
+            <Input
+              id="workSchedule"
+              name="workSchedule"
+              {...invalid("workSchedule")}
+              placeholder="e.g. Mon–Fri, 9am–6pm"
+              defaultValue={posting?.workSchedule ?? ""}
+            />
+          </Field>
           <p className="text-body-sm text-muted-foreground">
             Monthly. Leave blank to hide the salary on the careers page.
           </p>
