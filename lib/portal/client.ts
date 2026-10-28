@@ -1,6 +1,8 @@
 import { portalConfig } from "./config";
 
 export type Staff = {
+  /** Portal user id; older Portal deployments omit it, so username remains available. */
+  id?: string;
   name: string;
   username: string;
   email: string;
@@ -73,7 +75,7 @@ export async function exchangeCode(input: {
 
 /**
  * Asks the Portal whether the handle may use a Module right now. The 200 body also carries
- * the Staff member's profile (`staff`), an addition proposed to the Portal's validate contract.
+ * the Staff member's profile (`staff`), optionally including their Portal user id.
  * Anything other than a clear answer is `unavailable`, which never allows.
  */
 export async function validateSession(sessionHandle: string, module: string): Promise<Validation> {
