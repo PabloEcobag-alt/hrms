@@ -120,6 +120,14 @@ async function salaryMutation<T>(...args: Parameters<typeof auditedMutation<T>>)
 // ECMAScript trim whitespace, shared by SQL validation and field error reporting.
 const whitespace = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
+function templateNameFor(options?: PostingSubmitOptions): string | undefined {
+  const name = options?.saveAsTemplate?.name?.trim();
+  if (options?.saveAsTemplate && !name) {
+    throw new JobPostingError("validation", { templateName: "Template name is required" });
+  }
+  return name;
+}
+
 const requiredPostingFields = ["title", "department", "employmentType", "location", "description"] as const;
 
 function publicationErrors(fields: Partial<JobPostingFields>) {
@@ -161,8 +169,9 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
 
   const expire = () => closeExpiredJobPostings(db);
 
-  async function change(id: string, status: "draft" | "open", fields: Partial<JobPostingFields>, target: JobPostingStatus) {
+  async function change(id: string, status: "draft" | "open", fields: Partial<JobPostingFields>, target: JobPostingStatus, options?: PostingSubmitOptions) {
     const staff = await authorize();
+    const templateName = templateNameFor(options);
     validatePostingOpenings(fields);
     validateSalary(fields, JobPostingError);
     await expire();
@@ -197,7 +206,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     const { rows } = await salaryMutation<JobPosting>(db, staff, action,
       `UPDATE public.job_postings SET ${updates.join(", ")}
        WHERE id = $1 AND status = $2 AND $4::text IS NOT NULL AND (${validation})
-         AND (status != 'open' OR deadline > clock_timestamp()) RETURNING ${columns}`, values,
+         AND (status != 'open' OR deadline > clock_timestamp()) RETURNING ${columns}`, values, templateName,
     );
     if (rows[0]) return rows[0];
     await expire();
@@ -210,10 +219,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
 
   async function create(fields: Partial<JobPostingFields>, publish: boolean, options?: PostingSubmitOptions): Promise<JobPosting> {
     const staff = await authorize();
-    const templateName = options?.saveAsTemplate?.name?.trim();
-    if (options?.saveAsTemplate && !templateName) {
-      throw new JobPostingError("validation", { templateName: "Template name is required" });
-    }
+    const templateName = templateNameFor(options);
     if (publish) {
       const errors = publicationErrors(fields);
       for (const validate of [() => validatePostingOpenings(fields), () => validateSalary(fields, JobPostingError)]) {
@@ -243,7 +249,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
   }
 
   return {
-    publish: (id: string) => change(id, "draft", {}, "open"),
+    publish: (id: string, options?: PostingSubmitOptions) => change(id, "draft", {}, "open", options),
     editOpen: (id: string, fields: Partial<JobPostingFields>) => change(id, "open", fields, "open"),
     close: (id: string) => change(id, "open", {}, "closed"),
     markFilled: (id: string) => change(id, "open", {}, "filled"),
@@ -253,8 +259,9 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     },
     saveDraft: (fields: Partial<JobPostingFields>, options?: PostingSubmitOptions) => create(fields, false, options),
     createAndPublish: (fields: Partial<JobPostingFields>, options?: PostingSubmitOptions) => create(fields, true, options),
-    async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
+    async editDraft(id: string, fields: Partial<JobPostingFields>, options?: PostingSubmitOptions): Promise<JobPosting> {
       const staff = await authorize();
+      const templateName = templateNameFor(options);
       validatePostingOpenings(fields);
       validateSalary(fields, JobPostingError);
       const names = fieldColumns;
@@ -273,7 +280,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
            THEN clock_timestamp() ELSE updated_at END`;
       const sql = `UPDATE public.job_postings SET ${updates.join(", ")}, updated_at = ${updatedAt}
            WHERE id = $1 AND status = 'draft' RETURNING ${columns}`;
-      const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.updated", sql, values);
+      const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.updated", sql, values, templateName);
       if (!rows[0]) await draftMissing(id);
       return rows[0];
     },

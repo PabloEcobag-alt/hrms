@@ -244,3 +244,7 @@ Careers must preserve the added column in future schema migrations. Application
 rollback can leave it in place. Template content is copied from the saved posting;
 deadline, status, id and timestamps are excluded, and identity/timestamps are
 assigned independently by the template write.
+
+Existing Drafts accept the same optional request through
+`editDraft(id, fields, options)` and `publish(id, options)`. They copy the resulting
+saved content; a failed template write preserves the original Draft unchanged.
