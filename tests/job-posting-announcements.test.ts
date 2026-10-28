@@ -11,7 +11,7 @@ let fail = false;
 beforeEach(async () => {
   db = new PGlite();
   await db.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
-  for (const name of ["0001-job-posting-drafts", "0002-job-templates", "0003-job-posting-audit", "0004-job-posting-announcements", "0005-job-posting-first-published", "0006-job-openings", "0007-job-salary-range"]) {
+  for (const name of ["0001-job-posting-drafts", "0002-job-templates", "0003-job-posting-audit", "0004-job-posting-announcements", "0005-job-posting-first-published", "0006-job-openings", "0007-job-salary-range", "0008-job-work-schedule"]) {
     await db.exec(await readFile(new URL(`../migrations/${name}.sql`, import.meta.url), "utf8"));
   }
   await db.exec(`CREATE SCHEMA neon_auth;
