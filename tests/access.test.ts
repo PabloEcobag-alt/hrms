@@ -35,6 +35,36 @@ describe("access to a Module", () => {
     expect(await access(handle).check("Attendance")).toEqual({ decision: "allowed", staff: ada });
   });
 
+  it("carries the Portal user id through Module access and the permitted-page overview", async () => {
+    const staff = { ...ada, id: "portal-user-105" };
+    const handle = portal.signIn(staff, ["Attendance"]);
+    const load = access(handle);
+
+    expect(await load.check("Attendance")).toEqual({ decision: "allowed", staff });
+    expect(await load.overview()).toEqual({ decision: "allowed", staff, pages: ["/attendance"] });
+  });
+
+  it("keeps the username identity when an older Portal omits the user id", async () => {
+    const handle = portal.signIn(ada, ["Attendance"]);
+    const result = await access(handle).check("Attendance");
+
+    expect(result).toEqual({ decision: "allowed", staff: ada });
+    if (result.decision === "allowed") {
+      expect(result.staff.id ?? result.staff.username).toBe("ada.okafor");
+    }
+  });
+
+  it("does not grant access based on the presence of a Portal user id", async () => {
+    const handle = portal.signIn({ ...ada, id: "portal-user-105" }, ["Attendance"]);
+
+    expect(await access(handle).check("Payroll & ESS")).toEqual({ decision: "denied" });
+    portal.unavailable = true;
+    expect(await access(handle).check("Attendance")).toEqual({ decision: "unavailable" });
+    portal.unavailable = false;
+    portal.endSession(handle);
+    expect(await access(handle).check("Attendance")).toEqual({ decision: "invalid" });
+  });
+
   it("is denied without the Module, even holding a different one", async () => {
     const handle = portal.signIn(ada, ["Attendance"]);
 
