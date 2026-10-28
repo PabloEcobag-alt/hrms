@@ -24,6 +24,9 @@ export type JobPosting = JobPostingFields & {
   updatedAt: Date;
 };
 
+/** List-only projection; Applications remain owned by Careers. */
+export type JobPostingListItem = JobPosting & { readonly applicantCount: number };
+
 /** A Postgres connection; tests supply disposable Postgres, never shared data. */
 export type PostingDatabase = {
   query<T>(sql: string, values?: unknown[]): Promise<{ rows: T[] }>;
@@ -181,11 +184,18 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       );
       if (!rows.length) await draftMissing(id);
     },
-    async list(filters: { status?: JobPostingStatus; search?: string } = {}): Promise<JobPosting[]> {
+    async list(filters: { status?: JobPostingStatus; search?: string } = {}): Promise<JobPostingListItem[]> {
       await authorize();
       await expire();
-      return (await db.query<JobPosting>(
-        `SELECT ${columns} FROM public.job_postings
+      return (await db.query<JobPostingListItem>(
+        `SELECT ${columns},
+           coalesce(application_counts.total, 0) AS "applicantCount"
+         FROM public.job_postings
+         LEFT JOIN (
+           SELECT job_posting_id, count(*)::integer AS total
+           FROM public.applications WHERE status <> 'Withdrawn'
+           GROUP BY job_posting_id
+         ) AS application_counts ON application_counts.job_posting_id = job_postings.id
          WHERE ($1::text IS NULL OR status = $1)
            AND ($2::text IS NULL OR strpos(lower(title), lower($2)) > 0)
          ORDER BY updated_at DESC, id`,

@@ -20,6 +20,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
+  await db.exec(await readFile(new URL("./fixtures/careers-applications.sql", import.meta.url), "utf8"));
   vi.stubEnv("CAREERS_URL", "https://careers.test");
   portal = new FakePortal();
   handle = portal.signIn(ada, ["Recruitment and Hiring"]);
@@ -69,8 +70,34 @@ it("lists all Job Postings, filters by status and searches by title", async () =
   await postings.saveDraft({ title: "HR Officer" });
   expect(await postings.list()).toHaveLength(2);
   expect(await postings.list({ status: "open" })).toEqual([]);
-  expect(await postings.list({ status: "draft", search: "RECRUIT" })).toEqual([recruiter]);
+  expect(await postings.list({ status: "draft", search: "RECRUIT" })).toEqual([{ ...recruiter, applicantCount: 0 }]);
   expect(await postings.read("missing")).toBeUndefined();
+});
+
+it("lists a live applicant count per posting, counting every status except Withdrawn", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const populated = await postings.saveDraft({ title: "Recruiter" });
+  const empty = await postings.saveDraft({ title: "No applications" });
+  const withdrawnOnly = await postings.saveDraft({ title: "Withdrawn only" });
+  const statuses = ["Received", "Interview", "Hired", "Declined", "Expired", "Rejected", "Withdrawn"];
+  for (const [index, status] of statuses.entries()) {
+    await db.query(`INSERT INTO applications
+      (applicant_id, job_posting_id, reference_number, status, profile_snapshot, documents_snapshot, consented_at)
+      VALUES ($1, $2, $3, $4, '{}', '[]', now())`, [`applicant-${index}`, populated.id, `APP-${index}`, status]);
+  }
+  await db.query(`INSERT INTO applications
+    (applicant_id, job_posting_id, reference_number, status, profile_snapshot, documents_snapshot, consented_at)
+    VALUES ('other', $1, 'APP-OTHER', 'Withdrawn', '{}', '[]', now())`, [withdrawnOnly.id]);
+  expect(await postings.list()).toEqual([
+    { ...withdrawnOnly, applicantCount: 0 }, { ...empty, applicantCount: 0 }, { ...populated, applicantCount: 6 },
+  ]);
+  expect(await postings.list({ status: "draft", search: "Recruiter" }))
+    .toEqual([{ ...populated, applicantCount: 6 }]);
+  await db.query("UPDATE applications SET status = 'Withdrawn' WHERE reference_number = 'APP-0'");
+  expect(await jobPostingsFor(handle, db).list({ search: "Recruiter" }))
+    .toEqual([{ ...populated, applicantCount: 5 }]);
+  expect((await db.query("SELECT status FROM applications ORDER BY id")).rows)
+    .toEqual([...statuses.map((status, index) => ({ status: index === 0 ? "Withdrawn" : status })), { status: "Withdrawn" }]);
 });
 
 it("deletes a Draft and refuses to edit or delete a missing Job Posting", async () => {
@@ -91,7 +118,7 @@ it.each(["open", "closed", "filled"] as const)("preserves an existing %s Job Pos
   const postings = jobPostingsFor(handle, db);
   const original = await postings.read(status);
   expect(original).toMatchObject({ firstPublishedAt: null });
-  expect(await postings.list({ status })).toEqual([original]);
+  expect(await postings.list({ status })).toEqual([{ ...original, applicantCount: 0 }]);
   await expect(postings.deleteDraft(status)).rejects.toMatchObject({ reason: "not-draft" });
   await expect(postings.editDraft(status, { title: "Changed" })).rejects.toMatchObject({ reason: "not-draft" });
   await expect(postings.editDraft(status, {})).rejects.toMatchObject({ reason: "not-draft" });
@@ -108,7 +135,7 @@ it("refuses every operation without the Module, then allows them when granted", 
   ]) {
     await expect(operation()).rejects.toMatchObject({ reason: "denied" });
   }
-  expect(await allowed.list()).toEqual([draft]);
+  expect(await allowed.list()).toEqual([{ ...draft, applicantCount: 0 }]);
 });
 
 it("rechecks the Portal on each operation and fails closed for expired sessions and outages", async () => {
@@ -137,7 +164,7 @@ it("saves all fields and treats search text and caller-supplied status as data",
   };
   const draft = await postings.saveDraft({ ...fields, ...JSON.parse('{"status":"open"}') });
   expect(draft).toMatchObject({ ...fields, status: "draft" });
-  expect(await postings.list({ search: "%" })).toEqual([draft]);
+  expect(await postings.list({ search: "%" })).toEqual([{ ...draft, applicantCount: 0 }]);
   expect(await postings.list({ search: "' OR TRUE --" })).toEqual([]);
   expect(await postings.editDraft(draft.id, { title: "", ...JSON.parse('{"status":"open"}') }))
     .toMatchObject({ title: "", status: "draft" });

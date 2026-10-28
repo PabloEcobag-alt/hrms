@@ -54,3 +54,17 @@ they remain queued until that service is updated. Draft deletion, views and
 scheduled deadline closure do not emit Staff action events. Applicant notification
 delivery is a separate part of parent ticket #28. Publication events explicitly
 record `applicants_notified: false` until that integration supplies a delivery result.
+
+### Applicant counts on Job Postings
+
+`jobPostingsFor(...).list()` returns a read-only numeric `applicantCount` on each
+Job Posting. It counts rows in the shared Careers `public.applications` table
+whose `job_posting_id` matches the posting, excluding only the exact Careers status
+`Withdrawn`. All other statuses count, including Received, interview stages,
+Hired, Declined, Expired and Rejected. Postings with no Applications or only
+withdrawn Applications return zero. Counts are read live, including when filtering
+by posting status or title; reading them never writes Applications.
+
+Careers owns the Applications schema. This change needs no database migration;
+read access to its existing table is required. Single-posting reads and mutations
+continue to return the base Job Posting without the list-only count.
