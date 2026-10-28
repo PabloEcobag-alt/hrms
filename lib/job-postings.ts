@@ -1,3 +1,4 @@
+import { auditedMutation, retryJobPostingAudit } from "./job-posting-audit";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
@@ -70,6 +71,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
   async function authorize() {
     const result = await accessFor(sessionHandle).check("Recruitment and Hiring");
     if (result.decision !== "allowed") throw new JobPostingError(result.decision);
+    return result.staff;
   }
 
   async function draftMissing(id: string): Promise<never> {
@@ -80,7 +82,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
   const expire = () => closeExpiredJobPostings(db);
 
   async function change(id: string, status: "draft" | "open", fields: Partial<JobPostingFields>, target: JobPostingStatus) {
-    await authorize();
+    const staff = await authorize();
     await expire();
     if (fields.deadline && !Number.isFinite(fields.deadline.getTime())) {
       throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
@@ -103,7 +105,8 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       ? required.map((field) => `length(btrim(${expressions[field]}, $4::text)) > 0`)
         .concat([`${expressions.deadline} > clock_timestamp()`]).join(" AND ")
       : "TRUE";
-    const { rows } = await db.query<JobPosting>(
+    const action = target === "closed" ? "job_posting.closed" : target === "filled" ? "job_posting.filled" : status === "draft" ? "job_posting.published" : "job_posting.updated";
+    const { rows } = await auditedMutation<JobPosting>(db, staff, action,
       `UPDATE public.job_postings SET ${updates.join(", ")}
        WHERE id = $1 AND status = $2 AND $4::text IS NOT NULL AND (${validation})
          AND (status != 'open' OR deadline > clock_timestamp()) RETURNING ${columns}`, values,
@@ -134,8 +137,8 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       await expire();
     },
     async saveDraft(fields: Partial<JobPostingFields>): Promise<JobPosting> {
-      await authorize();
-      const { rows } = await db.query<JobPosting>(
+      const staff = await authorize();
+      const { rows } = await auditedMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
            required_documents, screening_criteria, deadline, status)
@@ -148,7 +151,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       return rows[0];
     },
     async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
-      await authorize();
+      const staff = await authorize();
       const names = fieldColumns;
       const values: unknown[] = [id];
       const updates: string[] = [];
@@ -162,7 +165,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
         ? `UPDATE public.job_postings SET ${updates.join(", ")}, updated_at = clock_timestamp()
            WHERE id = $1 AND status = 'draft' RETURNING ${columns}`
         : `SELECT ${columns} FROM public.job_postings WHERE id = $1 AND status = 'draft'`;
-      const { rows } = await db.query<JobPosting>(sql, values);
+      const { rows } = await auditedMutation<JobPosting>(db, staff, "job_posting.updated", sql, values);
       if (!rows[0]) await draftMissing(id);
       return rows[0];
     },
@@ -210,12 +213,13 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
   async function authorize() {
     const result = await accessFor(sessionHandle).check("Recruitment and Hiring");
     if (result.decision !== "allowed") throw new JobTemplateError(result.decision);
+    return result.staff;
   }
 
   return {
     async create(fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
-      await authorize();
-      return (await db.query<JobTemplate>(
+      const staff = await authorize();
+      return (await auditedMutation<JobTemplate>(db, staff, "job_template.created",
         `INSERT INTO public.job_templates
           (id, title, department, employment_type, location, description, requirements,
            required_documents, screening_criteria)
@@ -226,7 +230,7 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       )).rows[0];
     },
     async edit(id: string, fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
-      await authorize();
+      const staff = await authorize();
       const values: unknown[] = [id];
       const updates: string[] = [];
       for (const field of Object.keys(fieldColumns) as (keyof JobPostingFields)[]) {
@@ -239,18 +243,18 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
         ? `UPDATE public.job_templates SET ${updates.join(", ")}, updated_at = clock_timestamp()
            WHERE id = $1 RETURNING ${templateColumns}`
         : `SELECT ${templateColumns} FROM public.job_templates WHERE id = $1`;
-      const { rows } = await db.query<JobTemplate>(sql, values);
+      const { rows } = await auditedMutation<JobTemplate>(db, staff, "job_template.updated", sql, values);
       if (!rows[0]) throw new JobTemplateError("not-found");
       return rows[0];
     },
     async delete(id: string): Promise<void> {
-      await authorize();
-      const { rows } = await db.query(`DELETE FROM public.job_templates WHERE id = $1 RETURNING id`, [id]);
+      const staff = await authorize();
+      const { rows } = await auditedMutation(db, staff, "job_template.deleted", `DELETE FROM public.job_templates WHERE id = $1 RETURNING id, title`, [id]);
       if (!rows.length) throw new JobTemplateError("not-found");
     },
     async startPosting(id: string): Promise<JobPosting> {
-      await authorize();
-      const { rows } = await db.query<JobPosting>(
+      const staff = await authorize();
+      const { rows } = await auditedMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
            required_documents, screening_criteria, deadline, status)
@@ -266,4 +270,9 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       return (await db.query<JobTemplate>(`SELECT ${templateColumns} FROM public.job_templates ORDER BY updated_at DESC, id`)).rows;
     },
   };
+}
+
+/** Called only after authenticating the maintenance request. */
+export async function retryJobPostingAuditDelivery(db: PostingDatabase = database) {
+  await retryJobPostingAudit(db);
 }

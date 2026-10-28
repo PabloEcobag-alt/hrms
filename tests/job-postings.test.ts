@@ -8,15 +8,29 @@ const ada = { name: "Ada Okafor", username: "ada", email: "ada@example.test", ro
 let db: PGlite;
 let portal: FakePortal;
 let handle: string;
+let auditRequests: Record<string, unknown>[];
 
 beforeEach(async () => {
   db = new PGlite();
   await db.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0001-job-posting-drafts.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
   portal = new FakePortal();
   handle = portal.signIn(ada, ["Recruitment and Hiring"]);
-  vi.stubGlobal("fetch", portalFetch(portal));
+  auditRequests = [];
+  const portalBoundary = portalFetch(portal);
+  vi.stubEnv("API_GATEWAY_URL", "https://gateway.test");
+  vi.stubEnv("API_GATEWAY_KEY", "hrms-test-key");
+  vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).startsWith("https://gateway.test")) {
+      expect(String(input)).toBe("https://gateway.test/audit/events");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer hrms-test-key");
+      auditRequests.push(JSON.parse(String(init?.body)));
+      return Response.json({ id: "accepted" }, { status: 201 });
+    }
+    return portalBoundary(input, init);
+  });
   vi.stubEnv("PORTAL_URL", FAKE_PORTAL_URL);
   vi.stubEnv("PORTAL_SYSTEM_NAME", FAKE_SYSTEM);
   vi.stubEnv("PORTAL_SYSTEM_SECRET", FAKE_SECRET);
@@ -307,6 +321,7 @@ it("adopts the existing Careers template table without losing templates", async 
     const migration = await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8");
     await legacy.exec(migration);
     await legacy.exec(migration);
+    await legacy.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -314,5 +329,71 @@ it("adopts the existing Careers template table without losing templates", async 
     expect(await templates.list()).toHaveLength(2);
   } finally {
     await legacy.close();
+  }
+});
+
+
+it("sends one Administrator-only Audit Event for each successful Staff action, never for views or refusals", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  await postings.editDraft(draft.id, { title: "Senior Recruiter" });
+  await postings.publish(draft.id);
+  await postings.editOpen(draft.id, { title: "Recruiter" });
+  await postings.close(draft.id);
+  await expect(postings.close(draft.id)).rejects.toBeDefined();
+  const filled = await postings.saveDraft(publishable);
+  await postings.publish(filled.id);
+  await postings.markFilled(filled.id);
+  const template = await templates.create({ title: "Recruiter" });
+  await templates.edit(template.id, { title: "Senior Recruiter" });
+  const copied = await templates.startPosting(template.id);
+  await templates.delete(template.id);
+  await postings.read(draft.id);
+  await postings.list();
+  await templates.list();
+  expect(auditRequests.map((event) => event.action)).toEqual([
+    "job_posting.created", "job_posting.updated", "job_posting.published", "job_posting.updated",
+    "job_posting.closed", "job_posting.created", "job_posting.published", "job_posting.filled",
+    "job_template.created", "job_template.updated", "job_posting.created", "job_template.deleted",
+  ]);
+  for (const event of auditRequests) {
+    expect(event).toMatchObject({ source: "HRMS", module: "Recruitment and Hiring", outcome: "success",
+      actor: { type: "staff", id: "ada", display_name: "Ada Okafor" }, customer_description: null,
+      occurred_at: expect.any(String), idempotency_key: expect.any(String) });
+  }
+  expect(auditRequests[0].target).toEqual({ type: "job_posting", id: draft.id, display_name: "Recruiter" });
+  expect(auditRequests[10].target).toEqual({ type: "job_posting", id: copied.id, display_name: "Senior Recruiter" });
+  expect(auditRequests[11].target).toEqual({ type: "job_template", id: template.id, display_name: "Senior Recruiter" });
+  expect(new Set(auditRequests.map((event) => event.idempotency_key)).size).toBe(12);
+});
+
+it("keeps a successful publish when audit fails and retries the identical event after a restart", async () => {
+  const { retryJobPostingAuditDelivery } = await import("@/lib/job-postings");
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  const boundary = fetch;
+  const attempts: unknown[] = [];
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).startsWith("https://gateway.test")) {
+      attempts.push(JSON.parse(String(init?.body)));
+      return Response.json({ error: "unavailable" }, { status: 503 });
+    }
+    return boundary(input, init);
+  });
+  try {
+    expect(await postings.publish(draft.id)).toMatchObject({ status: "open" });
+    expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ status: "open" });
+    expect(log).toHaveBeenCalled();
+    await db.query("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    vi.stubGlobal("fetch", boundary);
+    await retryJobPostingAuditDelivery(db);
+    expect(auditRequests.at(-1)).toEqual(attempts[0]);
+    const count = auditRequests.length;
+    await retryJobPostingAuditDelivery(db);
+    expect(auditRequests).toHaveLength(count);
+  } finally {
+    log.mockRestore();
   }
 });
