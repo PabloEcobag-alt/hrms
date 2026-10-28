@@ -652,3 +652,28 @@ it("adds unspecified work schedules to existing rows and safely reapplies", asyn
     expect((await db.query(`SELECT id, work_schedule FROM ${table}`)).rows).toEqual([{ id: "legacy-schedule", work_schedule: null }]);
   }
 });
+
+it("normalises default and custom Required Documents on every content write", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  const input = [" Resume or CV ", "", "\t\n", " NBI clearance\u00a0", "resume OR cv", "nbi CLEARANCE", "Portfolio"];
+  const expected = ["Resume or CV", "NBI clearance", "Portfolio"];
+  const draft = await postings.saveDraft({ ...publishable, requiredDocuments: input });
+  expect(draft.requiredDocuments).toEqual(expected);
+  expect((await postings.editDraft(draft.id, { requiredDocuments: input })).requiredDocuments).toEqual(expected);
+  // Simulate values written before normalisation existed; publishing has no field payload.
+  await db.query("UPDATE job_postings SET required_documents = $1::jsonb WHERE id = $2", [JSON.stringify(input), draft.id]);
+  expect((await postings.publish(draft.id)).requiredDocuments).toEqual(expected);
+  expect((await postings.editOpen(draft.id, { requiredDocuments: input })).requiredDocuments).toEqual(expected);
+  const template = await templates.create({ requiredDocuments: input });
+  expect(template.requiredDocuments).toEqual(expected);
+  expect((await templates.edit(template.id, { requiredDocuments: input })).requiredDocuments).toEqual(expected);
+  await db.query("UPDATE job_templates SET required_documents = $1::jsonb WHERE id = $2", [JSON.stringify(input), template.id]);
+  const copy = await templates.startPosting(template.id);
+  expect(copy.requiredDocuments).toEqual(expected);
+  expect((await templates.edit(template.id, { title: "Saved again" })).requiredDocuments).toEqual(expected);
+  await templates.edit(template.id, { requiredDocuments: [] });
+  expect((await postings.read(copy.id))?.requiredDocuments).toEqual(expected);
+  expect((await templates.startPosting(template.id)).requiredDocuments).toEqual([]);
+  expect((await postings.editOpen(draft.id, { requiredDocuments: [] })).requiredDocuments).toEqual([]);
+});
