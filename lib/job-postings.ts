@@ -5,6 +5,8 @@ import { Pool } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import { accessFor } from "./portal/access";
 
+export type PostingSubmitOptions = { saveAsTemplate?: { name?: string } };
+
 export type JobPostingStatus = "draft" | "open" | "closed" | "filled";
 export type JobPostingFields = {
   title: string;
@@ -50,7 +52,7 @@ const database: PostingDatabase = {
 };
 
 export class JobPostingError extends Error {
-  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "not-draft" | "not-open" | "validation", public readonly fieldErrors: Partial<Record<keyof JobPostingFields, string>> = {}) {
+  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "not-draft" | "not-open" | "validation", public readonly fieldErrors: Partial<Record<keyof JobPostingFields | "templateName", string>> = {}) {
     super(`Job Posting: ${reason}`);
   }
 }
@@ -206,8 +208,12 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     throw new JobPostingError("validation", publicationErrors(candidate));
   }
 
-  async function create(fields: Partial<JobPostingFields>, publish: boolean): Promise<JobPosting> {
+  async function create(fields: Partial<JobPostingFields>, publish: boolean, options?: PostingSubmitOptions): Promise<JobPosting> {
     const staff = await authorize();
+    const templateName = options?.saveAsTemplate?.name?.trim();
+    if (options?.saveAsTemplate && !templateName) {
+      throw new JobPostingError("validation", { templateName: "Template name is required" });
+    }
     if (publish) {
       const errors = publicationErrors(fields);
       for (const validate of [() => validatePostingOpenings(fields), () => validateSalary(fields, JobPostingError)]) {
@@ -230,7 +236,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
         fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
         JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
-        fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null, publish ? "open" : "draft"],
+        fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null, publish ? "open" : "draft"], templateName,
     );
     if (!rows[0]) throw new JobPostingError("validation", { deadline: "deadline must be a valid future date" });
     return rows[0];
@@ -245,8 +251,8 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       await authorize();
       await expire();
     },
-    saveDraft: (fields: Partial<JobPostingFields>) => create(fields, false),
-    createAndPublish: (fields: Partial<JobPostingFields>) => create(fields, true),
+    saveDraft: (fields: Partial<JobPostingFields>, options?: PostingSubmitOptions) => create(fields, false, options),
+    createAndPublish: (fields: Partial<JobPostingFields>, options?: PostingSubmitOptions) => create(fields, true, options),
     async editDraft(id: string, fields: Partial<JobPostingFields>): Promise<JobPosting> {
       const staff = await authorize();
       validatePostingOpenings(fields);
@@ -305,7 +311,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
 }
 
 export type JobTemplateFields = Omit<JobPostingFields, "deadline">;
-export type JobTemplate = JobTemplateFields & { id: string; updatedAt: Date };
+export type JobTemplate = JobTemplateFields & { id: string; name: string | null; updatedAt: Date };
 
 export class JobTemplateError extends Error {
   constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "not-found" | "validation", public readonly fieldErrors: Partial<Record<keyof JobTemplateFields, string>> = {}) {
@@ -313,7 +319,7 @@ export class JobTemplateError extends Error {
   }
 }
 
-const templateColumns = `id, title, department, employment_type AS "employmentType",
+const templateColumns = `id, name, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
   screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", work_schedule AS "workSchedule", openings, updated_at AS "updatedAt"`;
 
