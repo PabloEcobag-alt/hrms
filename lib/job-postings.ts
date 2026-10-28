@@ -118,6 +118,19 @@ async function salaryMutation<T>(...args: Parameters<typeof auditedMutation<T>>)
 // ECMAScript trim whitespace, shared by SQL validation and field error reporting.
 const whitespace = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
+const requiredPostingFields = ["title", "department", "employmentType", "location", "description"] as const;
+
+function publicationErrors(fields: Partial<JobPostingFields>) {
+  const errors: Partial<Record<keyof JobPostingFields, string>> = {};
+  for (const field of requiredPostingFields) {
+    if (!fields[field]?.trim()) errors[field] = `${field} is required`;
+  }
+  if (!fields.deadline || !Number.isFinite(fields.deadline.getTime()) || fields.deadline.getTime() <= Date.now()) {
+    errors.deadline = "deadline must be a valid future date";
+  }
+  return errors;
+}
+
 /** Normalise the resulting value inside the write, including legacy rows and partial edits.
  * Keep the first spelling and original order when names differ only by case.
  */
@@ -172,7 +185,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     if (fields.requiredDocuments === undefined) {
       updates.push(`required_documents = ${normalisedDocuments("required_documents")}`);
     }
-    const required = ["title", "department", "employmentType", "location", "description"] as const;
+    const required = requiredPostingFields;
     // Validate the resulting row inside the write, including concurrent edits.
     const validation = target === "open"
       ? required.map((field) => `length(btrim(${expressions[field]}, $4::text)) > 0`)
@@ -190,26 +203,13 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     if (!current) throw new JobPostingError("not-found");
     if (current.status !== status) throw new JobPostingError(status === "draft" ? "not-draft" : "not-open");
     const candidate = { ...current, ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) };
-    const errors: Partial<Record<keyof JobPostingFields, string>> = {};
-    for (const field of required) {
-      if (!candidate[field].trim()) errors[field] = `${field} is required`;
-    }
-    if (!candidate.deadline || candidate.deadline.getTime() <= Date.now()) {
-      errors.deadline = "deadline must be a valid future date";
-    }
-    throw new JobPostingError("validation", errors);
+    throw new JobPostingError("validation", publicationErrors(candidate));
   }
 
   async function create(fields: Partial<JobPostingFields>, publish: boolean): Promise<JobPosting> {
     const staff = await authorize();
     if (publish) {
-      const errors: Partial<Record<keyof JobPostingFields, string>> = {};
-      for (const field of ["title", "department", "employmentType", "location", "description"] as const) {
-        if (!fields[field]?.trim()) errors[field] = `${field} is required`;
-      }
-      if (!fields.deadline || !Number.isFinite(fields.deadline.getTime()) || fields.deadline.getTime() <= Date.now()) {
-        errors.deadline = "deadline must be a valid future date";
-      }
+      const errors = publicationErrors(fields);
       for (const validate of [() => validatePostingOpenings(fields), () => validateSalary(fields, JobPostingError)]) {
         try { validate(); } catch (error) {
           if (!(error instanceof JobPostingError)) throw error;
