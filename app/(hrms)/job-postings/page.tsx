@@ -16,7 +16,9 @@ import { Card } from "@/components/ui/card";
 import { JobPostingFilters } from "@/components/job-postings/job-posting-filters";
 import {
   canDelete,
+  STATUS_BADGE,
   STATUS_LABEL,
+  statusCounts,
   statusFromParam,
 } from "@/lib/job-posting-view";
 import {
@@ -27,13 +29,6 @@ import {
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
 import { removeDraft } from "./actions";
-
-const STATUS_BADGE = {
-  draft: "secondary",
-  open: "success",
-  closed: "destructive",
-  filled: "info",
-} as const;
 
 const formatDeadline = (deadline: Date | null) =>
   deadline
@@ -128,9 +123,7 @@ async function Listing({
   }
 
   // Tab counts reflect the search, so they always add up to what the table would show.
-  const counts: Record<string, number> = { "": matching.length };
-  for (const posting of matching)
-    counts[posting.status] = (counts[posting.status] ?? 0) + 1;
+  const counts = statusCounts(matching);
   const postings = status
     ? matching.filter((posting) => posting.status === status)
     : matching;
@@ -179,7 +172,7 @@ export default async function Page({
           <h1 className="text-headline-md">Job Postings</h1>
           <p className="text-body-sm text-muted-foreground">
             Roles Staff write here. Applicants see a Job Posting on Careers once
-            it is Open.
+            it is Published.
           </p>
         </div>
         <div className="flex items-center gap-sm">
