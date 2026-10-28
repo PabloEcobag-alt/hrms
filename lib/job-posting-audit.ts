@@ -23,10 +23,10 @@ export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, acti
   const templateSql = templateName === undefined ? "" : `, saved_template AS (
     INSERT INTO public.job_templates
       (id, name, title, department, employment_type, location, description, requirements,
-       required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule)
+       required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, responsibilities, benefits)
     SELECT $${values.length + 5}, $${values.length + 6}, title, department, "employmentType", location,
       description, requirements, "requiredDocuments", "screeningCriteria", openings,
-      "salaryFrom", "salaryTo", "workSchedule" FROM changed RETURNING id, title
+      "salaryFrom", "salaryTo", "workSchedule", responsibilities, benefits FROM changed RETURNING id, title
   ), template_queued AS (
     INSERT INTO public.hrms_audit_outbox (id, payload)
     SELECT $${values.length + 7}, $${values.length + 8}::jsonb || jsonb_build_object(

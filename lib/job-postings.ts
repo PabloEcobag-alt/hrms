@@ -322,7 +322,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
   };
 }
 
-export type JobTemplateFields = Omit<JobPostingFields, "deadline" | "responsibilities" | "benefits">;
+export type JobTemplateFields = Omit<JobPostingFields, "deadline">;
 export type JobTemplate = JobTemplateFields & { id: string; name: string | null; updatedAt: Date };
 
 export class JobTemplateError extends Error {
@@ -332,7 +332,7 @@ export class JobTemplateError extends Error {
 }
 
 const templateColumns = `id, name, title, department, employment_type AS "employmentType",
-  location, description, requirements, required_documents AS "requiredDocuments",
+  location, description, requirements, responsibilities, benefits, required_documents AS "requiredDocuments",
   screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", work_schedule AS "workSchedule", openings, updated_at AS "updatedAt"`;
 
 /** Explicit template saves only. Postings keep copied values, never a template id. */
@@ -351,11 +351,11 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       return (await salaryMutation<JobTemplate>(db, staff, "job_template.created",
         `INSERT INTO public.job_templates
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13) RETURNING ${templateColumns}`,
+           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, responsibilities, benefits)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,${normalisedDocuments("$8::jsonb")},$9::jsonb,$10,$11,$12,$13,$14::jsonb,$15::jsonb) RETURNING ${templateColumns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
-          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []), fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null],
+          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []), fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, JSON.stringify(fields.responsibilities ?? []), JSON.stringify(fields.benefits ?? [])],
       )).rows[0];
     },
     async edit(id: string, fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
@@ -364,13 +364,13 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       if (invalidOpenings(fields.openings)) throw new JobTemplateError("validation", { openings: "openings must be a positive integer" });
       const values: unknown[] = [id];
       const updates: string[] = [`required_documents = ${normalisedDocuments("required_documents")}`];
-      for (const field of Object.keys(fieldColumns) as (keyof typeof fieldColumns)[]) {
+      for (const field of Object.keys(postingFieldColumns) as (keyof typeof postingFieldColumns)[]) {
         if (field === "deadline" || fields[field] === undefined) continue;
-        const json = field === "requiredDocuments" || field === "screeningCriteria";
+        const json = field === "requiredDocuments" || field === "screeningCriteria" || field === "responsibilities" || field === "benefits";
         values.push(json ? JSON.stringify(fields[field]) : fields[field]);
         const expression = `$${values.length}${json ? "::jsonb" : ""}`;
         if (field === "requiredDocuments") updates[0] = `required_documents = ${normalisedDocuments(expression)}`;
-        else updates.push(`${fieldColumns[field]} = ${expression}`);
+        else updates.push(`${postingFieldColumns[field]} = ${expression}`);
       }
       const updatedAt = values.length > 1 ? "clock_timestamp()"
         : `CASE WHEN required_documents IS DISTINCT FROM ${normalisedDocuments("required_documents")}
@@ -391,9 +391,9 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status)
+           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, responsibilities, benefits, deadline, status)
          SELECT $2, title, department, employment_type, location, description, requirements,
-           ${normalisedDocuments("required_documents")}, screening_criteria, openings, salary_from, salary_to, work_schedule, NULL, 'draft'
+           ${normalisedDocuments("required_documents")}, screening_criteria, openings, salary_from, salary_to, work_schedule, responsibilities, benefits, NULL, 'draft'
          FROM public.job_templates WHERE id = $1 RETURNING ${columns}`, [id, randomUUID()],
       );
       if (!rows[0]) throw new JobTemplateError("not-found");
