@@ -17,7 +17,7 @@ export async function deliverAnnouncements(db: PostingDatabase): Promise<void> {
         WHERE posting_id = $1 AND audience_ready = false RETURNING posting_id
       ), audience AS (
         SELECT u.id, u.email, u."emailVerified" AND COALESCE(p.job_alerts_opt_in, false) AS email_eligible
-        FROM neon_auth."user" u LEFT JOIN public.applicant_profiles p ON p.applicant_id = u.id
+        FROM neon_auth."user" u LEFT JOIN public.applicant_profiles p ON p.applicant_id = u.id::text
       ) INSERT INTO public.hrms_announcement_deliveries (id, posting_id, path, payload)
       SELECT 'job-posting.opened:' || c.posting_id || ':in-app:' || a.id, c.posting_id,
         '/notifications/notifications', jsonb_build_object(
