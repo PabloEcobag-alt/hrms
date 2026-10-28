@@ -10,13 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { DEFAULT_REQUIRED_DOCUMENTS, EMPLOYMENT_TYPES, splitRequirements } from "@/lib/job-posting-form";
-import type { JobPosting } from "@/lib/job-postings";
+import type { JobPosting, JobTemplate } from "@/lib/job-postings";
 import type { FormState } from "@/app/(hrms)/job-postings/actions";
 import { DeadlinePicker } from "./deadline-picker";
 import { DeleteDraftButton } from "./delete-draft-button";
-import { PostingStatusButton } from "./posting-status-button";
 import { RequiredDocuments } from "./required-documents";
-import { TitleCombobox, type TemplateOption } from "./template-picker";
+import { TemplatePicker } from "./template-picker";
 
 type Props = {
   action?: (state: FormState, data: FormData) => Promise<FormState>;
@@ -26,9 +25,8 @@ type Props = {
   canPublish?: boolean;
   /** A brand-new Job Posting: it can be saved as a Draft or published straight away. */
   isNew?: boolean;
-  /** Open actions: close and mark as filled. */
-  closeAction?: () => Promise<FormState>;
-  fillAction?: () => Promise<FormState>;
+  /** A Published posting: edits go live as soon as they are saved. */
+  published?: boolean;
   /** Closed and Filled postings show their values and offer nothing else. */
   readOnly?: boolean;
   /** A Job Template form: no deadline, and nothing about publishing. */
@@ -36,7 +34,7 @@ type Props = {
   /** Offers "Save as template": a named Job Template saved together with the posting. */
   canSaveTemplate?: boolean;
   /** Saved Job Templates to start a new posting from, shown beside the Job title. */
-  templates?: TemplateOption[];
+  templates?: JobTemplate[];
   /** Extra template-only action, e.g. delete. */
   templateActions?: React.ReactNode;
 };
@@ -224,14 +222,16 @@ export function JobPostingForm({
   deleteAction,
   canPublish,
   isNew,
-  closeAction,
-  fillAction,
+  published,
   readOnly,
   template,
   canSaveTemplate,
   templates,
   templateActions,
 }: Props) {
+  // Choosing a template refills the fields below; the deadline stays as it was.
+  const [deadline, setDeadline] = useState(posting?.deadline ?? null);
+  const [picked, setPicked] = useState<{ template: JobTemplate; count: number }>();
   const [state, submit, pending] = useActionState(action ?? noAction, {});
   const errors = Object.fromEntries(
     Object.keys(state.fieldErrors ?? {}).map((field) => [
@@ -239,9 +239,10 @@ export function JobPostingForm({
       ERROR_TEXT[field] ?? "This field is required.",
     ]),
   ) as Record<string, string>;
-  const sections = splitRequirements(posting?.requirements ?? "");
+  const values = picked?.template ?? posting;
+  const sections = splitRequirements(values?.requirements ?? "");
   // A new posting starts with the defaults ticked.
-  const checkedDocuments = posting ? (posting.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
+  const checkedDocuments = values ? (values.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
   // Marks an input as invalid for assistive tech and styling.
   const invalid = (name: string, errorKey = name) =>
     errors[errorKey]
@@ -250,7 +251,7 @@ export function JobPostingForm({
 
   return (
     <form action={submit} className="flex flex-col gap-md">
-      <fieldset disabled={readOnly} className="contents">
+      <fieldset disabled={readOnly} className="contents" key={picked?.count ?? 0}>
         {state.error && (
           <Alert variant="destructive">
             <AlertDescription>{state.error}</AlertDescription>
@@ -260,24 +261,30 @@ export function JobPostingForm({
           <div className="flex min-w-0 flex-col gap-md">
             <Section title="Role">
               <Field name="title" label="Job title" required error={errors.title}>
-                {templates ? (
-                  <>
-                    <TitleCombobox defaultValue={posting?.title} templates={templates} {...invalid("title")} />
-                    <p className="text-xs text-[#71717a]">
-                      {templates.length === 0
-                        ? "No templates yet. Tick “Save as template” in the Template section and this role will show up here next time."
-                        : "Pick a template to fill in the form, or type a new title to start blank."}
-                    </p>
-                  </>
-                ) : (
-                  <Input
+                <div className="flex overflow-hidden rounded-lg border border-[#e4e4e7] bg-white focus-within:border-[#8b5cf6] has-[[aria-invalid=true]]:border-destructive">
+                  <input
                     id="title"
                     name="title"
                     {...invalid("title")}
+                    defaultValue={values?.title}
                     placeholder="e.g. Production Staff"
-                    className={controlClass}
-                    defaultValue={posting?.title}
+                    className="min-w-0 flex-1 bg-transparent px-[12px] py-[10px] text-sm text-[#18181b] outline-none placeholder:text-[#a1a1aa]"
                   />
+                  {templates && !template && !readOnly && (
+                    <TemplatePicker
+                      templates={templates}
+                      onPick={(chosen) =>
+                        setPicked((previous) => ({ template: chosen, count: (previous?.count ?? 0) + 1 }))
+                      }
+                    />
+                  )}
+                </div>
+                {templates && !template && !readOnly && (
+                  <p className="text-xs text-[#71717a]">
+                    {templates.length === 0
+                      ? "No templates yet. Tick “Save as template” in the Template section and this role will show up here next time."
+                      : "Pick a template to fill in the form, or type a new title to start blank."}
+                  </p>
                 )}
               </Field>
               <div className="grid gap-md sm:grid-cols-2">
@@ -288,7 +295,7 @@ export function JobPostingForm({
                     {...invalid("department")}
                     placeholder="e.g. Production"
                     className={controlClass}
-                    defaultValue={posting?.department}
+                    defaultValue={values?.department}
                   />
                 </Field>
                 <Field name="location" label="Location" required error={errors.location}>
@@ -298,12 +305,12 @@ export function JobPostingForm({
                     {...invalid("location")}
                     placeholder="e.g. Main kitchen · Antipolo"
                     className={controlClass}
-                    defaultValue={posting?.location}
+                    defaultValue={values?.location}
                   />
                 </Field>
               </div>
               <Field name="employmentType" label="Employment type" required error={errors.employmentType}>
-                <EmploymentType value={posting?.employmentType} invalid={invalid("employmentType")} />
+                <EmploymentType value={values?.employmentType} invalid={invalid("employmentType")} />
               </Field>
               <div className="grid gap-md sm:grid-cols-2">
                 <Field name="openings" label="Openings" error={errors.openings}>
@@ -316,7 +323,7 @@ export function JobPostingForm({
                     step={1}
                     placeholder="1"
                     className={controlClass}
-                    defaultValue={posting?.openings ?? ""}
+                    defaultValue={values?.openings ?? ""}
                   />
                 </Field>
               </div>
@@ -333,7 +340,7 @@ export function JobPostingForm({
                   rows={3}
                   placeholder="What this role does, in one or two sentences."
                   className={cn(controlClass, textareaClass)}
-                  defaultValue={posting?.description}
+                  defaultValue={values?.description}
                 />
               </Field>
               <Field name="responsibilities" label="Responsibilities">
@@ -366,7 +373,7 @@ export function JobPostingForm({
                     name="salaryFrom"
                     placeholder="Min"
                     invalid={invalid("salaryFrom")}
-                    defaultValue={posting?.salaryFrom}
+                    defaultValue={values?.salaryFrom}
                   />
                 </Field>
                 <Field name="salaryTo" label="Salary to" error={errors.salaryTo}>
@@ -374,7 +381,7 @@ export function JobPostingForm({
                     name="salaryTo"
                     placeholder="Max"
                     invalid={invalid("salaryTo")}
-                    defaultValue={posting?.salaryTo}
+                    defaultValue={values?.salaryTo}
                   />
                 </Field>
               </div>
@@ -386,7 +393,7 @@ export function JobPostingForm({
                   {...invalid("workSchedule")}
                   placeholder="e.g. Mon–Fri, 9am–6pm"
                   className={controlClass}
-                  defaultValue={posting?.workSchedule ?? ""}
+                  defaultValue={values?.workSchedule ?? ""}
                 />
               </Field>
             </Section>
@@ -396,7 +403,8 @@ export function JobPostingForm({
                   <DeadlinePicker
                     name="deadline"
                     {...invalid("deadline")}
-                    defaultValue={posting?.deadline ?? null}
+                    defaultValue={deadline}
+                    onChange={(value) => setDeadline(value ? new Date(`${value}T23:59:59.999Z`) : null)}
                   />
                 </Field>
               )}
@@ -407,12 +415,12 @@ export function JobPostingForm({
                   name="screeningCriteria"
                   rows={3}
                   className={cn(controlClass, textareaClass)}
-                  defaultValue={posting?.screeningCriteria?.join("\n")}
+                  defaultValue={values?.screeningCriteria?.join("\n")}
                 />
               </Field>
             </Section>
             {canSaveTemplate && !readOnly && (
-              <TemplateSection defaultName={posting?.title} error={errors.templateName} />
+              <TemplateSection defaultName={values?.title} error={errors.templateName} />
             )}
           </div>
         </div>
@@ -423,7 +431,7 @@ export function JobPostingForm({
             ? "A template saves everything except the deadline. Postings started from it are copies."
             : readOnly
               ? "This Job Posting is final and cannot be reopened. Create a new one instead."
-              : closeAction
+              : published
                 ? "Changes appear on Careers as soon as you save."
                 : isNew
                   ? "Publishing makes it live on your careers page right away."
@@ -432,22 +440,6 @@ export function JobPostingForm({
         <div className="flex items-center gap-sm">
           {templateActions}
           {deleteAction && <DeleteDraftButton action={deleteAction} />}
-          {closeAction && (
-            <PostingStatusButton
-              label="Close"
-              title="Close this Job Posting?"
-              description="Applicants will no longer see it on Careers. This cannot be undone."
-              action={closeAction}
-            />
-          )}
-          {fillAction && (
-            <PostingStatusButton
-              label="Mark as filled"
-              title="Mark this Job Posting as filled?"
-              description="Applicants will no longer see it on Careers. This cannot be undone."
-              action={fillAction}
-            />
-          )}
           <Button variant="outline" className={cn(buttonClass, "border-[#e4e4e7] text-[#1f1a2e]")} asChild>
             <Link href="/job-postings">{readOnly ? "Back" : "Cancel"}</Link>
           </Button>
@@ -460,7 +452,7 @@ export function JobPostingForm({
             >
               {pending
                 ? "Saving…"
-                : template || closeAction
+                : template || published
                   ? "Save changes"
                   : isNew
                     ? "Save as draft"

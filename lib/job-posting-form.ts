@@ -110,7 +110,27 @@ export function editFooter(status: JobPostingStatus) {
     publish: status === "draft",
     saveChanges: status === "open",
     delete: status === "draft",
-    close: status === "open",
-    fill: status === "open",
   };
+}
+
+/** Which status actions the posting's page offers, outside the form. */
+export function statusActions(status: JobPostingStatus) {
+  return { close: status === "open", fill: status === "open" };
+}
+
+/** One line under a template's name in the picker: what sets it apart from the others. */
+export function templateSummary(
+  template: Pick<JobTemplateFields, "department" | "employmentType" | "location" | "salaryFrom" | "salaryTo">,
+): string {
+  const peso = (amount: number) => `₱${amount.toLocaleString("en-PH")}`;
+  const { salaryFrom, salaryTo } = template;
+  const salary =
+    salaryFrom != null && salaryTo != null
+      ? `${peso(salaryFrom)}–${salaryTo.toLocaleString("en-PH")}`
+      : salaryFrom != null
+        ? `from ${peso(salaryFrom)}`
+        : salaryTo != null
+          ? `up to ${peso(salaryTo)}`
+          : "";
+  return [template.department, template.employmentType, template.location, salary].filter(Boolean).join(" · ");
 }

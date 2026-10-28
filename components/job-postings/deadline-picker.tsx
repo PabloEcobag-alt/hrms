@@ -11,10 +11,13 @@ import { deadlineInputValue } from "@/lib/job-posting-form";
 export function DeadlinePicker({
   name,
   defaultValue,
+  onChange,
   ...aria
 }: {
   name: string;
   defaultValue: Date | null;
+  /** Called with the chosen `YYYY-MM-DD`, or "" when cleared. */
+  onChange?: (value: string) => void;
 } & React.AriaAttributes) {
   const initial = deadlineInputValue(defaultValue);
   const [value, setValue] = useState(initial);
@@ -48,7 +51,9 @@ export function DeadlinePicker({
           selected={selected}
           defaultMonth={selected}
           onSelect={(day) => {
-            setValue(day ? `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}` : "");
+            const next = day ? `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}` : "";
+            setValue(next);
+            onChange?.(next);
             setOpen(false);
           }}
         />
