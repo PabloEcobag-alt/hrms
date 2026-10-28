@@ -36,3 +36,9 @@ export function statusFromParam(value: string | undefined): JobPostingStatus | u
 
 /** Delete is offered only for Drafts. */
 export const canDelete = (status: JobPostingStatus) => status === "draft";
+
+/** The day a posting was first published, in Manila time; a dash when it never was. */
+export const formatPosted = (firstPublishedAt: Date | null) =>
+  firstPublishedAt
+    ? firstPublishedAt.toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })
+    : "—";

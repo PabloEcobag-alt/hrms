@@ -16,6 +16,7 @@ import { JobPostingFilters } from "@/components/job-postings/job-posting-filters
 import {
   STATUS_BADGE,
   STATUS_LABEL,
+  formatPosted,
   statusCounts,
   statusFromParam,
 } from "@/lib/job-posting-view";
@@ -62,6 +63,7 @@ function PostingsTable({ postings }: { postings: JobPosting[] }) {
           <TableHead>Job</TableHead>
           <TableHead>Location</TableHead>
           <TableHead>Type</TableHead>
+          <TableHead>Posted</TableHead>
           <TableHead>Deadline</TableHead>
           <TableHead>Status</TableHead>
         </TableRow>
@@ -83,6 +85,7 @@ function PostingsTable({ postings }: { postings: JobPosting[] }) {
             </TableCell>
             <TableCell>{posting.location || "—"}</TableCell>
             <TableCell>{posting.employmentType || "—"}</TableCell>
+            <TableCell>{formatPosted(posting.firstPublishedAt)}</TableCell>
             <TableCell>{formatDeadline(posting.deadline)}</TableCell>
             <TableCell>
               <Badge variant={STATUS_BADGE[posting.status]}>
@@ -194,7 +197,7 @@ export default async function Page({
           </Button>
         </div>
       </div>
-      <Suspense fallback={<TableSkeleton columns={5} />}>
+      <Suspense fallback={<TableSkeleton columns={6} />}>
         <Listing
           status={statusFromParam(one(status))}
           search={one(q)?.trim() || undefined}
