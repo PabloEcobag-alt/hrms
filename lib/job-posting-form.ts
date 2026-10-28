@@ -9,8 +9,8 @@ const lines = (data: FormData, name: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-/** Every field is sent, so a Draft edit can clear a field by leaving it blank. */
-export function fieldsFromForm(data: FormData): JobPostingFields {
+/** Visible form fields are sent; backend-only openings stays omitted on edits. */
+export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "openings"> {
   const date = text(data, "deadline");
   // A deadline is the end of its chosen day.
   const deadline = date ? new Date(`${date}T23:59:59.999Z`) : null;
@@ -33,8 +33,8 @@ export function deadlineInputValue(deadline: Date | null): string {
 }
 
 /** A Job Template keeps everything except the deadline. */
-export function templateFieldsFromForm(data: FormData): JobTemplateFields {
+export function templateFieldsFromForm(data: FormData): Omit<JobTemplateFields, "openings"> {
   const fields: Partial<JobPostingFields> = fieldsFromForm(data);
   delete fields.deadline;
-  return fields as JobTemplateFields;
+  return fields as Omit<JobTemplateFields, "openings">;
 }

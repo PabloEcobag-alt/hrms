@@ -156,3 +156,20 @@ failed publishing leaves it unset. Edits, closing, filling, deadline expiry and
 announcement delivery never change it. It is distinct from `updated_at` and
 `announced_at`, and cannot be supplied through content patches. Rolling back
 application code can leave the added column in place.
+
+## Number of openings (#54)
+
+Apply `0006-job-openings.sql` before deploying these callers. Both shared tables,
+`public.job_postings` and `public.job_templates`, gain nullable `openings` (integer,
+positive when specified). Existing rows remain unchanged with `NULL`; no default
+or backfill is applied. Careers must add `openings: number | null` to its schema
+and preserve the columns and positive-value checks in future migrations.
+Application rollback can leave these additive columns in place.
+
+Posting and template results include `openings`. Create defaults omitted values
+to `null`; edits preserve omitted values and clear the number with explicit
+`null`. All content writes reject non-positive, fractional, non-numeric and
+out-of-range values (maximum 2,147,483,647) with reason `validation` and an
+`openings` field error. Templates retain the value and `startPosting` copies it
+independently into the Draft. Openings remain optional when publishing. Existing
+forms omit this backend-only field, so editing other content preserves it.

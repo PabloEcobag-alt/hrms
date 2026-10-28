@@ -18,6 +18,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
   await db.exec(await readFile(new URL("./fixtures/careers-applications.sql", import.meta.url), "utf8"));
@@ -387,6 +388,7 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -464,5 +466,71 @@ it("keeps a successful publish when audit fails and retries the identical event 
     expect(auditRequests).toHaveLength(count);
   } finally {
     log.mockRestore();
+  }
+});
+
+it("round-trips nullable openings through templates, independent Draft copies and publication", async () => {
+  const templates = jobTemplatesFor(handle, db);
+  const postings = jobPostingsFor(handle, db);
+  expect(await templates.create({})).toMatchObject({ openings: null });
+  expect(await postings.saveDraft({})).toMatchObject({ openings: null });
+  const template = await templates.create({ ...publishable, openings: 3 });
+  expect(template.openings).toBe(3);
+  expect(await templates.edit(template.id, { title: "Updated" })).toMatchObject({ openings: 3 });
+  expect(await templates.edit(template.id, { openings: 5 })).toMatchObject({ openings: 5 });
+  const draft = await templates.startPosting(template.id);
+  expect(draft).toMatchObject({ openings: 5, status: "draft" });
+  await templates.edit(template.id, { openings: null });
+  expect(await templates.list()).toContainEqual(expect.objectContaining({ id: template.id, openings: null }));
+  expect(await postings.read(draft.id)).toMatchObject({ openings: 5 });
+  expect(await postings.editDraft(draft.id, { deadline: publishable.deadline })).toMatchObject({ openings: 5 });
+  expect(await postings.publish(draft.id)).toMatchObject({ openings: 5 });
+  expect(await postings.editOpen(draft.id, { openings: 2 })).toMatchObject({ openings: 2 });
+  expect(await postings.list()).toContainEqual(expect.objectContaining({ id: draft.id, openings: 2 }));
+  expect(await postings.editOpen(draft.id, { openings: null })).toMatchObject({ openings: null });
+  expect(await postings.editDraft((await postings.saveDraft({ openings: 1 })).id, { openings: null }))
+    .toMatchObject({ openings: null });
+  expect(await templates.startPosting(template.id)).toMatchObject({ openings: null });
+});
+
+it.each([0, -1, 1.5, NaN, Infinity, 2_147_483_648, "3", true])("rejects invalid openings %s without changing postings or templates", async (value) => {
+  // Model untrusted runtime inputs arriving at the server boundary.
+  const fields = { openings: value } as unknown as Parameters<ReturnType<typeof jobPostingsFor>["saveDraft"]>[0];
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  const draft = await postings.saveDraft({ ...publishable, openings: 3 });
+  const open = await postings.saveDraft({ ...publishable, openings: 4 });
+  await postings.publish(open.id);
+  const template = await templates.create({ openings: 5 });
+  for (const operation of [() => postings.saveDraft(fields), () => postings.editDraft(draft.id, fields),
+    () => postings.editOpen(open.id, fields), () => templates.create(fields), () => templates.edit(template.id, fields)]) {
+    await expect(operation()).rejects.toMatchObject({ reason: "validation", fieldErrors: { openings: expect.any(String) } });
+  }
+  expect(await postings.read(draft.id)).toMatchObject({ openings: 3 });
+  expect(await postings.read(open.id)).toMatchObject({ openings: 4 });
+  expect(await templates.list()).toEqual([template]);
+  expect(await postings.list()).toHaveLength(2);
+});
+
+it("migrates existing rows to unspecified openings and safely reapplies", async () => {
+  const legacy = new PGlite();
+  try {
+    await legacy.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0001-job-posting-drafts.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8"));
+    await legacy.exec(`INSERT INTO job_postings
+      (id,title,department,description,requirements,employment_type,location,required_documents,screening_criteria,status)
+      VALUES ('existing','Existing role','','','','','','[]','[]','draft');
+      INSERT INTO job_templates (id) VALUES ('existing')`);
+    const sql = await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8");
+    await legacy.exec(sql);
+    await legacy.exec(sql);
+    for (const table of ["job_postings", "job_templates"]) {
+      expect((await legacy.query(`SELECT id, openings FROM ${table}`)).rows).toEqual([{ id: "existing", openings: null }]);
+      await expect(legacy.query(`UPDATE ${table} SET openings = 0`)).rejects.toBeDefined();
+      await legacy.query(`UPDATE ${table} SET openings = 2`);
+    }
+  } finally {
+    await legacy.close();
   }
 });
