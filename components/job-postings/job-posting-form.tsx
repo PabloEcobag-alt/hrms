@@ -241,6 +241,8 @@ export function JobPostingForm({
   ) as Record<string, string>;
   const values = picked?.template ?? posting;
   const sections = splitRequirements(values?.requirements ?? "");
+  // Postings saved before the list existed keep their Responsibilities in requirements; show them until the list is saved.
+  const responsibilities = values?.responsibilities?.length ? values.responsibilities.join("\n") : sections.responsibilities;
   // A new posting starts with the defaults ticked.
   const checkedDocuments = values ? (values.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
   // Marks an input as invalid for assistive tech and styling.
@@ -343,14 +345,14 @@ export function JobPostingForm({
                   defaultValue={values?.description}
                 />
               </Field>
-              <Field name="responsibilities" label="Responsibilities">
+              <Field name="responsibilities" label="Responsibilities (one per line)">
                 <Textarea
                   id="responsibilities"
                   name="responsibilities"
                   rows={4}
-                  placeholder="List the main tasks, one per line."
+                  placeholder="List the main tasks."
                   className={cn(controlClass, textareaClass)}
-                  defaultValue={sections.responsibilities}
+                  defaultValue={responsibilities}
                 />
               </Field>
               <Field name="qualifications" label="Qualifications">
@@ -361,6 +363,16 @@ export function JobPostingForm({
                   placeholder="Education, experience, documents and schedule."
                   className={cn(controlClass, textareaClass)}
                   defaultValue={sections.qualifications}
+                />
+              </Field>
+              <Field name="benefits" label="Benefits (one per line)">
+                <Textarea
+                  id="benefits"
+                  name="benefits"
+                  rows={3}
+                  placeholder="Pay extras, leave, insurance and other perks."
+                  className={cn(controlClass, textareaClass)}
+                  defaultValue={values?.benefits?.join("\n")}
                 />
               </Field>
             </Section>
