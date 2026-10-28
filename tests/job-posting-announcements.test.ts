@@ -469,3 +469,30 @@ it.each(["edit", "delete"] as const)("does not queue a Job Template %s event for
   expect(sends).toEqual([]);
   expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
 });
+
+it("announces to Neon UUID identities joined to Careers text profiles", async () => {
+  await db.exec(`TRUNCATE neon_auth."user", applicant_profiles;
+    ALTER TABLE neon_auth."user" ALTER COLUMN id TYPE uuid USING id::uuid;
+    INSERT INTO neon_auth."user" VALUES
+      ('00000000-0000-4000-8000-000000000001','verified@example.test',true),
+      ('00000000-0000-4000-8000-000000000002','unverified@example.test',false),
+      ('00000000-0000-4000-8000-000000000003','opted-out@example.test',true),
+      ('00000000-0000-4000-8000-000000000004','no-profile@example.test',true);
+    INSERT INTO applicant_profiles VALUES
+      ('00000000-0000-4000-8000-000000000001',true),
+      ('00000000-0000-4000-8000-000000000002',true),
+      ('00000000-0000-4000-8000-000000000003',false);`);
+  const postings = jobPostingsFor(handle, db);
+  const posting = await postings.createAndPublish({ title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") });
+  await retryJobPostingAnnouncements(db);
+  expect(sends.filter(s => s.path === "/notifications/notifications").flatMap(s => s.body.userIds).sort()).toEqual([
+    "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000004",
+  ]);
+  expect(sends.filter(s => s.path === "/notifications/emails/app").map(s => s.body.to)).toEqual(["verified@example.test"]);
+  expect(sends.find(s => s.body.action === "job_posting.published")?.body.metadata).toEqual({ applicants_notified: true });
+  const deliveries = [...sends];
+  await retryJobPostingAnnouncements(db);
+  expect(sends).toEqual(deliveries);
+  expect((await postings.read(posting.id))?.status).toBe("open");
+});
