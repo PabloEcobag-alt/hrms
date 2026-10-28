@@ -19,6 +19,7 @@ export type JobPostingFields = {
   openings: number | null;
   salaryFrom: number | null;
   salaryTo: number | null;
+  workSchedule: string | null;
 };
 export type JobPosting = JobPostingFields & {
   id: string;
@@ -56,7 +57,7 @@ export class JobPostingError extends Error {
 
 const columns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
-  screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", openings, deadline, status, first_published_at AS "firstPublishedAt", updated_at AS "updatedAt"`;
+  screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", work_schedule AS "workSchedule", openings, deadline, status, first_published_at AS "firstPublishedAt", updated_at AS "updatedAt"`;
 
 /** Internal maintenance entry point; callers must authenticate the scheduled request. */
 export async function closeExpiredJobPostings(db: PostingDatabase = database): Promise<void> {
@@ -68,7 +69,7 @@ const fieldColumns = {
   title: "title", department: "department", employmentType: "employment_type",
   location: "location", description: "description", requirements: "requirements",
   requiredDocuments: "required_documents", screeningCriteria: "screening_criteria", deadline: "deadline", openings: "openings",
-  salaryFrom: "salary_from", salaryTo: "salary_to",
+  salaryFrom: "salary_from", salaryTo: "salary_to", workSchedule: "work_schedule",
 } as const;
 // Match the positive PostgreSQL integer range before sending values to the driver.
 function invalidOpenings(value: number | null | undefined): boolean {
@@ -201,12 +202,12 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
       const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, deadline, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,'draft') RETURNING ${columns}`,
+           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14,'draft') RETURNING ${columns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
           JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []),
-          fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.deadline ?? null],
+          fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null, fields.deadline ?? null],
       );
       return rows[0];
     },
@@ -275,7 +276,7 @@ export class JobTemplateError extends Error {
 
 const templateColumns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
-  screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", openings, updated_at AS "updatedAt"`;
+  screening_criteria AS "screeningCriteria", salary_from AS "salaryFrom", salary_to AS "salaryTo", work_schedule AS "workSchedule", openings, updated_at AS "updatedAt"`;
 
 /** Explicit template saves only. Postings keep copied values, never a template id. */
 export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDatabase = database) {
@@ -293,11 +294,11 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       return (await salaryMutation<JobTemplate>(db, staff, "job_template.created",
         `INSERT INTO public.job_templates
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12) RETURNING ${templateColumns}`,
+           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13) RETURNING ${templateColumns}`,
         [randomUUID(), fields.title ?? "", fields.department ?? "", fields.employmentType ?? "",
           fields.location ?? "", fields.description ?? "", fields.requirements ?? "",
-          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []), fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null],
+          JSON.stringify(fields.requiredDocuments ?? []), JSON.stringify(fields.screeningCriteria ?? []), fields.openings ?? null, fields.salaryFrom ?? null, fields.salaryTo ?? null, fields.workSchedule ?? null],
       )).rows[0];
     },
     async edit(id: string, fields: Partial<JobTemplateFields>): Promise<JobTemplate> {
@@ -330,9 +331,9 @@ export function jobTemplatesFor(sessionHandle: string | undefined, db: PostingDa
       const { rows } = await salaryMutation<JobPosting>(db, staff, "job_posting.created",
         `INSERT INTO public.job_postings
           (id, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, deadline, status)
+           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, deadline, status)
          SELECT $2, title, department, employment_type, location, description, requirements,
-           required_documents, screening_criteria, openings, salary_from, salary_to, NULL, 'draft'
+           required_documents, screening_criteria, openings, salary_from, salary_to, work_schedule, NULL, 'draft'
          FROM public.job_templates WHERE id = $1 RETURNING ${columns}`, [id, randomUUID()],
       );
       if (!rows[0]) throw new JobTemplateError("not-found");

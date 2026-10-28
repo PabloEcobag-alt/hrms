@@ -20,6 +20,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
   await db.exec(await readFile(new URL("./fixtures/careers-applications.sql", import.meta.url), "utf8"));
@@ -391,6 +392,7 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -611,5 +613,42 @@ it("adds nullable salary bounds to existing Careers rows and safely reapplies co
       await expect(db.exec(`UPDATE ${table} SET salary_from = ${invalid}`)).rejects.toBeDefined();
     }
     await db.exec(`UPDATE ${table} SET salary_from = 0, salary_to = 0`);
+  }
+});
+
+
+it("keeps optional work schedules through template copies and posting lifecycle edits", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  expect(await postings.saveDraft({})).toMatchObject({ workSchedule: null });
+  expect(await templates.create({})).toMatchObject({ workSchedule: null });
+  const schedule = "Monday–Friday\n9 AM–6 PM";
+  const template = await templates.create({ ...publishable, workSchedule: schedule });
+  expect(await templates.edit(template.id, { title: "Senior Recruiter" })).toMatchObject({ workSchedule: schedule });
+  const draft = await templates.startPosting(template.id);
+  expect(draft.workSchedule).toBe(schedule);
+  await templates.edit(template.id, { workSchedule: "Weekends" });
+  expect(await templates.list()).toContainEqual(expect.objectContaining({ id: template.id, workSchedule: "Weekends" }));
+  expect(await postings.read(draft.id)).toMatchObject({ workSchedule: schedule });
+  expect(await postings.editDraft(draft.id, { deadline: publishable.deadline })).toMatchObject({ workSchedule: schedule });
+  expect(await postings.publish(draft.id)).toMatchObject({ workSchedule: schedule });
+  expect(await postings.editOpen(draft.id, { workSchedule: "Flexible" })).toMatchObject({ workSchedule: "Flexible" });
+  expect(await postings.list()).toContainEqual(expect.objectContaining({ id: draft.id, workSchedule: "Flexible" }));
+  expect(await postings.editOpen(draft.id, { workSchedule: null })).toMatchObject({ workSchedule: null });
+  expect(await templates.edit(template.id, { workSchedule: null })).toMatchObject({ workSchedule: null });
+  expect(await templates.startPosting(template.id)).toMatchObject({ workSchedule: null });
+  const direct = await postings.saveDraft({ workSchedule: schedule });
+  expect(direct.workSchedule).toBe(schedule);
+  expect(await postings.editDraft(direct.id, { workSchedule: null })).toMatchObject({ workSchedule: null });
+});
+
+it("adds unspecified work schedules to existing rows and safely reapplies", async () => {
+  await db.exec("ALTER TABLE job_postings DROP COLUMN work_schedule; ALTER TABLE job_templates DROP COLUMN work_schedule");
+  await db.exec("INSERT INTO job_postings (id,title,department,description,requirements,employment_type,location,required_documents,screening_criteria,status) VALUES ('legacy-schedule','','','','','','','[]','[]','draft'); INSERT INTO job_templates (id) VALUES ('legacy-schedule')");
+  const sql = await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8");
+  await db.exec(sql);
+  await db.exec(sql);
+  for (const table of ["job_postings", "job_templates"]) {
+    expect((await db.query(`SELECT id, work_schedule FROM ${table}`)).rows).toEqual([{ id: "legacy-schedule", work_schedule: null }]);
   }
 });

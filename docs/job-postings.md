@@ -196,3 +196,18 @@ with the content and audit write. Templates retain the bounds and `startPosting`
 copies them independently into the Draft. Publishing does not require a salary.
 Current forms omit these backend fields, preserving stored salary on other edits;
 Careers salary rendering and Staff form controls are separate UI work.
+
+## Work schedule (#58)
+
+Apply `0008-job-work-schedule.sql` before deploying these callers. Both shared
+Careers tables (`public.job_postings` and `public.job_templates`) gain nullable
+`work_schedule` text with no default or backfill. Existing rows keep `NULL`.
+Careers must add this nullable text column to its schema declaration and preserve
+it in future migrations. Application rollback can leave these additive columns.
+
+Server results expose `workSchedule: string | null`. Creation defaults omission
+to `null`; edits preserve omitted values and explicit `null` clears the schedule.
+Templates retain the text and `startPosting` copies it independently into a Draft.
+Publishing does not require a schedule. Existing forms omit this backend field,
+so editing other content preserves it; Staff controls and Careers rendering are
+separate UI work.
