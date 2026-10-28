@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canDelete, STATUS_FILTERS, STATUS_LABEL, statusCounts, statusFromParam } from "@/lib/job-posting-view";
+import { canDelete, formatPosted, STATUS_FILTERS, STATUS_LABEL, statusCounts, statusFromParam } from "@/lib/job-posting-view";
 
 describe("job posting list view", () => {
   it("labels Open as Published everywhere", () => {
@@ -23,5 +23,10 @@ describe("job posting list view", () => {
   it("offers delete only for Drafts", () => {
     expect(canDelete("draft")).toBe(true);
     for (const status of ["open", "closed", "filled"] as const) expect(canDelete(status)).toBe(false);
+  });
+
+  it("shows the first-published day, or a dash for Drafts and historical rows", () => {
+    expect(formatPosted(new Date("2026-03-14T02:00:00Z"))).toBe("Mar 14, 2026");
+    expect(formatPosted(null)).toBe("—");
   });
 });
