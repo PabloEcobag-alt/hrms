@@ -70,11 +70,6 @@ async function Listing() {
               <TableCell>{template.department || "—"}</TableCell>
               <TableCell>{template.employmentType || "—"}</TableCell>
               <TableCell className="flex items-center gap-xs">
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/job-postings/new?template=${template.id}`}>
-                    Start posting
-                  </Link>
-                </Button>
                 <DeleteTemplateButton
                   compact
                   title={template.title || "Untitled template"}

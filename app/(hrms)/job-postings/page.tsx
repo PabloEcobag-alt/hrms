@@ -167,8 +167,8 @@ async function Listing({
       </JobPostingFilters>
       {hasTemplates && (
         <p className="text-body-sm text-muted-foreground">
-          Start a new Job Posting from a saved Job Template with New Job
-          Posting, or manage them under Job Templates.
+          Pick a saved Job Template in the Title field of New Job Posting, or
+          manage them under Job Templates.
         </p>
       )}
     </>
