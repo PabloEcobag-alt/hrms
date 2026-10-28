@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { jobPostingsFor, retryJobPostingAnnouncements, retryJobPostingAuditDelivery } from "@/lib/job-postings";
+import { jobPostingsFor, jobTemplatesFor, retryJobPostingAnnouncements, retryJobPostingAuditDelivery } from "@/lib/job-postings";
 import { FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, FakePortal, portalFetch } from "./fake-portal";
 
 let db: PGlite;
@@ -12,7 +12,7 @@ let auditFailure: "rejected" | "network" | undefined;
 beforeEach(async () => {
   db = new PGlite();
   await db.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
-  for (const name of ["0001-job-posting-drafts", "0002-job-templates", "0003-job-posting-audit", "0004-job-posting-announcements", "0005-job-posting-first-published", "0006-job-openings", "0007-job-salary-range", "0008-job-work-schedule"]) {
+  for (const name of ["0001-job-posting-drafts", "0002-job-templates", "0003-job-posting-audit", "0004-job-posting-announcements", "0005-job-posting-first-published", "0006-job-openings", "0007-job-salary-range", "0008-job-work-schedule", "0009-job-template-name"]) {
     await db.exec(await readFile(new URL(`../migrations/${name}.sql`, import.meta.url), "utf8"));
   }
   await db.exec(`CREATE SCHEMA neon_auth;
@@ -314,4 +314,82 @@ it.each([
     expect(sends).toEqual([attempt, attempt]);
     expect(await postings.read(saved.id)).toEqual(saved);
   } finally { log.mockRestore(); }
+});
+
+
+it.each(["direct", "saveDraft", "editDraft", "createAndPublish", "publish"] as const)("queues Job Template creation through %s and clears both events after acceptance", async (mode) => {
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  const fields = { title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") };
+  const draft = mode === "editDraft" || mode === "publish" ? await postings.saveDraft(fields) : undefined;
+  sends = [];
+  auditFailure = "rejected";
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const options = { saveAsTemplate: { name: "Recruitment base" } };
+    const saved = mode === "direct" ? await templates.create(fields)
+      : mode === "publish" ? await postings.publish(draft!.id, options)
+      : mode === "editDraft" ? await postings.editDraft(draft!.id, fields, options)
+      : await postings[mode](fields, options);
+    const [template] = await jobTemplatesFor(handle, db).list();
+    expect(template).toMatchObject({ title: "Recruiter" });
+    const queued = (await db.query<{ id: string; payload: Record<string, unknown> }>("SELECT id, payload FROM hrms_audit_outbox")).rows;
+    expect(queued).toHaveLength(mode === "direct" ? 1 : 2);
+    const event = queued.find(row => row.payload.action === "job_template.created")!;
+    expect(event.payload).toMatchObject({
+      source: "HRMS", module: "Recruitment and Hiring", action: "job_template.created", outcome: "success",
+      actor: { type: "staff", id: "ada", display_name: "Ada" },
+      target: { type: "job_template", id: template.id, display_name: "Recruiter" },
+      occurred_at: expect.any(String), idempotency_key: event.id,
+    });
+    expect(event.payload).not.toHaveProperty("metadata");
+    if (mode !== "direct") {
+      expect(template.id).not.toBe(saved.id);
+      expect(queued.find(row => row.id !== event.id)?.payload).toMatchObject({
+        action: mode === "publish" || mode === "createAndPublish" ? "job_posting.published"
+          : mode === "editDraft" ? "job_posting.updated" : "job_posting.created",
+        target: { type: "job_posting", id: saved.id },
+      });
+    }
+    const attempt = sends.find(send => send.body.action === "job_template.created")!;
+    expect(attempt).toMatchObject({ path: "/audit/events", body: event.payload });
+    await retryJobPostingAuditDelivery(db);
+    expect(sends.filter(send => send.body.action === "job_template.created")).toEqual([attempt]);
+    auditFailure = undefined;
+    await db.exec("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    await retryJobPostingAnnouncements(db);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends.filter(send => send.body.action === "job_template.created")).toEqual([attempt, attempt]);
+    expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+    const acceptedCount = sends.length;
+    await retryJobPostingAnnouncements(db);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toHaveLength(acceptedCount);
+    expect(await jobTemplatesFor(handle, db).list()).toEqual([template]);
+  } finally { log.mockRestore(); }
+});
+
+
+it.each(["direct", "saveDraft", "editDraft", "createAndPublish", "publish"] as const)("delivers %s Job Template creation immediately when accepted", async (mode) => {
+  const postings = jobPostingsFor(handle, db);
+  const fields = { title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") };
+  const draft = mode === "editDraft" || mode === "publish" ? await postings.saveDraft(fields) : undefined;
+  sends = [];
+  const options = { saveAsTemplate: { name: "Recruitment base" } };
+  if (mode === "direct") await jobTemplatesFor(handle, db).create(fields);
+  else if (mode === "publish") await postings.publish(draft!.id, options);
+  else if (mode === "editDraft") await postings.editDraft(draft!.id, fields, options);
+  else await postings[mode](fields, options);
+  const [template] = await jobTemplatesFor(handle, db).list();
+  const templates = sends.filter(send => send.body.action === "job_template.created");
+  expect(templates).toHaveLength(1);
+  expect(templates[0]).toMatchObject({ path: "/audit/events", body: {
+    target: { type: "job_template", id: template.id, display_name: "Recruiter" },
+  } });
+  await retryJobPostingAnnouncements(db);
+  expect(sends.filter(send => send.path === "/audit/events")).toHaveLength(mode === "direct" ? 1 : 2);
+  expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+  const count = sends.length;
+  await retryJobPostingAuditDelivery(db);
+  expect(sends).toHaveLength(count);
 });
