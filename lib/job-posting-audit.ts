@@ -12,7 +12,7 @@ export async function auditedMutation<T>(db: PostingDatabase, staff: Staff, acti
   const type = action.split(".")[0];
   const event = {
     source: "HRMS", module: "Recruitment and Hiring", action, outcome: "success",
-    actor: { type: "staff", id: staff.username, display_name: staff.name },
+    actor: { type: "user", id: staff.id ?? staff.username, display_name: staff.name },
     customer_description: null, occurred_at: new Date().toISOString(), idempotency_key: id,
     description: `${staff.name} performed ${action}.`,
     ...(action === "job_posting.published" ? { metadata: { applicants_notified: false } } : {}),
