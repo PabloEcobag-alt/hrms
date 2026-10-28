@@ -110,9 +110,12 @@ export function editFooter(status: JobPostingStatus) {
     publish: status === "draft",
     saveChanges: status === "open",
     delete: status === "draft",
-    close: status === "open",
-    fill: status === "open",
   };
+}
+
+/** Which status actions the posting's page offers, outside the form. */
+export function statusActions(status: JobPostingStatus) {
+  return { close: status === "open", fill: status === "open" };
 }
 
 /** One line under a template's name in the picker: what sets it apart from the others. */

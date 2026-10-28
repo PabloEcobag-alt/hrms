@@ -19,7 +19,6 @@ import type { JobPosting, JobTemplate } from "@/lib/job-postings";
 import type { FormState } from "@/app/(hrms)/job-postings/actions";
 import { DeadlinePicker } from "./deadline-picker";
 import { DeleteDraftButton } from "./delete-draft-button";
-import { PostingStatusButton } from "./posting-status-button";
 import { RequiredDocuments } from "./required-documents";
 import { TemplatePicker } from "./template-picker";
 
@@ -31,9 +30,8 @@ type Props = {
   canPublish?: boolean;
   /** A brand-new Job Posting: it can be saved as a Draft or published straight away. */
   isNew?: boolean;
-  /** Open actions: close and mark as filled. */
-  closeAction?: () => Promise<FormState>;
-  fillAction?: () => Promise<FormState>;
+  /** A Published posting: edits go live as soon as they are saved. */
+  published?: boolean;
   /** Closed and Filled postings show their values and offer nothing else. */
   readOnly?: boolean;
   /** A Job Template form: no deadline, and nothing about publishing. */
@@ -137,8 +135,7 @@ export function JobPostingForm({
   deleteAction,
   canPublish,
   isNew,
-  closeAction,
-  fillAction,
+  published,
   readOnly,
   template,
   saveTemplateAction,
@@ -335,7 +332,7 @@ export function JobPostingForm({
             ? "A template saves everything except the deadline. Postings started from it are copies."
             : readOnly
               ? "This Job Posting is final and cannot be reopened. Create a new one instead."
-              : closeAction
+              : published
                 ? "Changes appear on Careers as soon as you save."
                 : isNew
                   ? "Publishing makes this Job Posting live on Careers right away."
@@ -344,22 +341,6 @@ export function JobPostingForm({
         <div className="flex items-center gap-sm">
           {templateActions}
           {deleteAction && <DeleteDraftButton action={deleteAction} />}
-          {closeAction && (
-            <PostingStatusButton
-              label="Close"
-              title="Close this Job Posting?"
-              description="Applicants will no longer see it on Careers. This cannot be undone."
-              action={closeAction}
-            />
-          )}
-          {fillAction && (
-            <PostingStatusButton
-              label="Mark as filled"
-              title="Mark this Job Posting as filled?"
-              description="Applicants will no longer see it on Careers. This cannot be undone."
-              action={fillAction}
-            />
-          )}
           <Button variant="outline" asChild>
             <Link href="/job-postings">{readOnly ? "Back" : "Cancel"}</Link>
           </Button>
@@ -380,7 +361,7 @@ export function JobPostingForm({
             >
               {pending
                 ? "Saving…"
-                : template || closeAction
+                : template || published
                   ? "Save changes"
                   : isNew
                     ? "Save as draft"

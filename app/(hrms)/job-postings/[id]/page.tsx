@@ -3,7 +3,8 @@ import { ChevronLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_BADGE, STATUS_LABEL } from "@/lib/job-posting-view";
-import { editFooter } from "@/lib/job-posting-form";
+import { editFooter, statusActions } from "@/lib/job-posting-form";
+import { PostingStatusButton } from "@/components/job-postings/posting-status-button";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
@@ -34,27 +35,50 @@ export default async function Page({
 
   if (!posting) notFound();
   const footer = editFooter(posting.status);
+  const actions = statusActions(posting.status);
 
   return (
     <div className="flex flex-col gap-md p-md sm:p-lg">
-      <div>
-        <Link
-          href="/job-postings"
-          className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="h-4 w-4" /> Job Postings
-        </Link>
-        <div className="flex items-center gap-sm">
-          <h1 className="text-headline-md">
-            {posting.status === "draft" ? "Edit Job Posting" : posting.title}
-          </h1>
-          <Badge variant={STATUS_BADGE[posting.status]}>
-            {STATUS_LABEL[posting.status]}
-          </Badge>
+      <div className="flex flex-wrap items-start justify-between gap-sm">
+        <div>
+          <Link
+            href="/job-postings"
+            className="flex items-center gap-xs text-body-sm text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" /> Job Postings
+          </Link>
+          <div className="flex items-center gap-sm">
+            <h1 className="text-headline-md">
+              {posting.status === "draft" ? "Edit Job Posting" : posting.title}
+            </h1>
+            <Badge variant={STATUS_BADGE[posting.status]}>
+              {STATUS_LABEL[posting.status]}
+            </Badge>
+          </div>
+          <p className="text-body-sm text-muted-foreground">
+            {INTRO[posting.status]}
+          </p>
         </div>
-        <p className="text-body-sm text-muted-foreground">
-          {INTRO[posting.status]}
-        </p>
+        {(actions.close || actions.fill) && (
+          <div className="flex items-center gap-sm">
+            {actions.fill && (
+              <PostingStatusButton
+                label="Mark as filled"
+                title="Mark this Job Posting as filled?"
+                description="Applicants will no longer see it on Careers. This cannot be undone."
+                action={fillPosting.bind(null, id)}
+              />
+            )}
+            {actions.close && (
+              <PostingStatusButton
+                label="Close"
+                title="Close this Job Posting?"
+                description="Applicants will no longer see it on Careers. This cannot be undone."
+                action={closePosting.bind(null, id)}
+              />
+            )}
+          </div>
+        )}
       </div>
       <JobPostingForm
         posting={posting}
@@ -66,8 +90,7 @@ export default async function Page({
               : undefined
         }
         deleteAction={footer.delete ? removeDraft.bind(null, id) : undefined}
-        closeAction={footer.close ? closePosting.bind(null, id) : undefined}
-        fillAction={footer.fill ? fillPosting.bind(null, id) : undefined}
+        published={footer.saveChanges}
         canPublish={footer.publish}
         readOnly={!footer.saveAsDraft && !footer.saveChanges}
         saveTemplateAction={saveAsTemplate}
