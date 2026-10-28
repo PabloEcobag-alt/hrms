@@ -8,6 +8,7 @@ let db: PGlite;
 let handle: string;
 let sends: { path: string; body: Record<string, unknown>; key: string | null }[];
 let fail = false;
+let auditFailure: "rejected" | "network" | undefined;
 beforeEach(async () => {
   db = new PGlite();
   await db.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
@@ -25,6 +26,7 @@ beforeEach(async () => {
   const boundary = portalFetch(portal);
   sends = [];
   fail = false;
+  auditFailure = undefined;
   vi.stubEnv("PORTAL_URL", FAKE_PORTAL_URL);
   vi.stubEnv("PORTAL_SYSTEM_NAME", FAKE_SYSTEM);
   vi.stubEnv("PORTAL_SYSTEM_SECRET", FAKE_SECRET);
@@ -36,6 +38,11 @@ beforeEach(async () => {
     if (!String(input).startsWith("https://gateway.test")) return boundary(input, init);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer hrms-key");
     sends.push({ path: new URL(String(input)).pathname, body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get("idempotency-key") });
+    if (String(input).endsWith("/audit/events")) {
+      if (auditFailure === "network") throw new Error("Audit service unreachable");
+      if (fail || auditFailure === "rejected") return Response.json({ error: "unavailable" }, { status: 503 });
+      return Response.json({ id: "accepted" }, { status: 201 });
+    }
     return Response.json({}, { status: fail ? 503 : 202 });
   });
 });
@@ -133,5 +140,56 @@ it("keeps announcing later postings when twenty earlier announcements cannot com
     fail = false;
     await retryJobPostingAnnouncements(db);
     expect(sends.filter(s => s.body.title === "New Job Posting: New opening")).toHaveLength(5);
+  } finally { log.mockRestore(); }
+});
+
+
+it.each(["draft", "direct"] as const)("queues one published event for %s publication and clears it on acceptance", async (mode) => {
+  const postings = jobPostingsFor(handle, db);
+  const fields = { title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") };
+  const posting = mode === "direct"
+    ? await postings.createAndPublish(fields)
+    : await postings.publish((await postings.saveDraft(fields)).id);
+  const queued = await db.query<{ id: string; payload: Record<string, unknown> }>("SELECT id, payload FROM hrms_audit_outbox");
+  expect(queued.rows).toHaveLength(1);
+  expect(queued.rows[0].payload).toMatchObject({
+    source: "HRMS", module: "Recruitment and Hiring", action: "job_posting.published", outcome: "success",
+    target: { type: "job_posting", id: posting.id, display_name: "Recruiter" },
+    idempotency_key: queued.rows[0].id, metadata: { applicants_notified: false },
+  });
+  expect(sends.filter(s => s.body.action === "job_posting.published")).toEqual([]);
+  await retryJobPostingAnnouncements(db);
+  const audits = sends.filter(s => s.body.action === "job_posting.published");
+  expect(audits).toHaveLength(1);
+  expect(audits[0].body).toEqual({ ...queued.rows[0].payload, metadata: { applicants_notified: true } });
+  expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+  await retryJobPostingAnnouncements(db);
+  expect(sends.filter(s => s.body.action === "job_posting.published")).toHaveLength(1);
+});
+
+it.each(["rejected", "network"] as const)("retains a committed publish after %s audit delivery and clears it on retry", async (failure) => {
+  const postings = jobPostingsFor(handle, db);
+  const posting = await postings.createAndPublish({ title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") });
+  auditFailure = failure;
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await retryJobPostingAnnouncements(db);
+    expect(await postings.read(posting.id)).toMatchObject({ status: "open" });
+    const attempts = sends.filter(s => s.body.action === "job_posting.published");
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].body.metadata).toEqual({ applicants_notified: true });
+    expect((await db.query("SELECT payload, attempts FROM hrms_audit_outbox")).rows).toEqual([
+      { payload: attempts[0].body, attempts: 1 },
+    ]);
+    const notifications = sends.filter(s => s.path.startsWith("/notifications"));
+    await retryJobPostingAnnouncements(db);
+    expect(sends.filter(s => s.body.action === "job_posting.published")).toHaveLength(1);
+    auditFailure = undefined;
+    await db.exec("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    await retryJobPostingAnnouncements(db);
+    expect(sends.filter(s => s.body.action === "job_posting.published")).toEqual([attempts[0], attempts[0]]);
+    expect(sends.filter(s => s.path.startsWith("/notifications"))).toEqual(notifications);
+    expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+    expect(await postings.read(posting.id)).toMatchObject({ status: "open" });
   } finally { log.mockRestore(); }
 });
