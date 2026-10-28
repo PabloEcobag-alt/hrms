@@ -393,3 +393,79 @@ it.each(["direct", "saveDraft", "editDraft", "createAndPublish", "publish"] as c
   await retryJobPostingAuditDelivery(db);
   expect(sends).toHaveLength(count);
 });
+
+it.each(["edit", "delete"] as const)("delivers Job Template %s with its own action and clears the outbox on acceptance", async (method) => {
+  const templates = jobTemplatesFor(handle, db);
+  const template = await templates.create({ title: "Recruiter" });
+  sends = [];
+  if (method === "edit") await templates.edit(template.id, { title: "Senior Recruiter" });
+  else await templates.delete(template.id);
+  expect(await jobTemplatesFor(handle, db).list()).toEqual(method === "edit"
+    ? [expect.objectContaining({ id: template.id, title: "Senior Recruiter" })] : []);
+  expect(sends).toHaveLength(1);
+  expect(sends[0]).toMatchObject({ path: "/audit/events", body: {
+    source: "HRMS", module: "Recruitment and Hiring", outcome: "success",
+    action: method === "edit" ? "job_template.updated" : "job_template.deleted",
+    actor: { type: "staff", id: "ada", display_name: "Ada" },
+    target: { type: "job_template", id: template.id, display_name: method === "edit" ? "Senior Recruiter" : "Recruiter" },
+    idempotency_key: expect.any(String), occurred_at: expect.any(String),
+  } });
+  expect(sends[0].body).not.toHaveProperty("metadata");
+  expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+  await retryJobPostingAuditDelivery(db);
+  expect(sends).toHaveLength(1);
+});
+
+it.each([
+  ["edit", "rejected"], ["edit", "network"],
+  ["delete", "rejected"], ["delete", "network"],
+] as const)("retains Job Template %s after %s audit failure and clears the identical event on retry", async (method, failure) => {
+  const templates = jobTemplatesFor(handle, db);
+  const template = await templates.create({ title: "Recruiter" });
+  sends = [];
+  auditFailure = failure;
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    if (method === "edit") await templates.edit(template.id, { title: "Senior Recruiter" });
+    else await templates.delete(template.id);
+    expect(await jobTemplatesFor(handle, db).list()).toEqual(method === "edit"
+      ? [expect.objectContaining({ id: template.id, title: "Senior Recruiter" })] : []);
+    expect(sends).toHaveLength(1);
+    const attempt = sends[0];
+    expect(attempt).toMatchObject({ path: "/audit/events", body: {
+      action: method === "edit" ? "job_template.updated" : "job_template.deleted",
+      target: { type: "job_template", id: template.id, display_name: method === "edit" ? "Senior Recruiter" : "Recruiter" },
+      idempotency_key: expect.any(String),
+    } });
+    expect((await db.query("SELECT id, payload, attempts FROM hrms_audit_outbox")).rows).toEqual([
+      { id: attempt.body.idempotency_key, payload: attempt.body, attempts: 1 },
+    ]);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt]);
+    auditFailure = undefined;
+    await db.exec("UPDATE hrms_audit_outbox SET next_attempt_at = '2000-01-01'");
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt, attempt]);
+    expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+    await retryJobPostingAuditDelivery(db);
+    expect(sends).toEqual([attempt, attempt]);
+  } finally { log.mockRestore(); }
+});
+
+it.each(["edit", "delete"] as const)("does not queue a Job Template %s event for denied or missing targets", async (method) => {
+  const templates = jobTemplatesFor(handle, db);
+  const template = await templates.create({ title: "Recruiter" });
+  sends = [];
+  const denied = jobTemplatesFor(undefined, db);
+  if (method === "edit") {
+    await expect(denied.edit(template.id, { title: "Changed" })).rejects.toBeDefined();
+    await expect(templates.edit("missing", { title: "Changed" })).rejects.toMatchObject({ reason: "not-found" });
+    await expect(templates.edit(template.id, { openings: 0 })).rejects.toMatchObject({ reason: "validation" });
+  } else {
+    await expect(denied.delete(template.id)).rejects.toBeDefined();
+    await expect(templates.delete("missing")).rejects.toMatchObject({ reason: "not-found" });
+  }
+  expect(await templates.list()).toEqual([template]);
+  expect(sends).toEqual([]);
+  expect((await db.query("SELECT id FROM hrms_audit_outbox")).rows).toEqual([]);
+});
