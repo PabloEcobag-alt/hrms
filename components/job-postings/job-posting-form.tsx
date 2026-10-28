@@ -11,12 +11,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { deadlineInputValue, EMPLOYMENT_TYPES, splitRequirements } from "@/lib/job-posting-form";
+import { DEFAULT_REQUIRED_DOCUMENTS, EMPLOYMENT_TYPES, splitRequirements } from "@/lib/job-posting-form";
 import type { JobPosting } from "@/lib/job-postings";
 import type { FormState } from "@/app/(hrms)/job-postings/actions";
+import { DeadlinePicker } from "./deadline-picker";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { PostingStatusButton } from "./posting-status-button";
 
@@ -144,6 +146,9 @@ export function JobPostingForm({
     ]),
   ) as Record<string, string>;
   const sections = splitRequirements(posting?.requirements ?? "");
+  // A new posting starts with the defaults ticked; saved documents outside them stay listed.
+  const checkedDocuments = posting ? (posting.requiredDocuments ?? []) : DEFAULT_REQUIRED_DOCUMENTS;
+  const requiredDocumentOptions = [...new Set([...DEFAULT_REQUIRED_DOCUMENTS, ...checkedDocuments])];
   // Marks an input as invalid for assistive tech and styling.
   const invalid = (name: string, errorKey = name) =>
     errors[errorKey]
@@ -222,12 +227,10 @@ export function JobPostingForm({
             </Field>
             {!template && (
               <Field name="deadline" label="Deadline" error={errors.deadline}>
-                <Input
-                  id="deadline"
+                <DeadlinePicker
                   name="deadline"
                   {...invalid("deadline")}
-                  type="date"
-                  defaultValue={deadlineInputValue(posting?.deadline ?? null)}
+                  defaultValue={posting?.deadline ?? null}
                 />
               </Field>
             )}
@@ -292,17 +295,22 @@ export function JobPostingForm({
           title="Requirements and screening"
           description="Optional. Applicants attach each required Document when they apply."
         >
-          <Field
-            name="requiredDocuments"
-            label="Required Documents (one per line)"
-          >
-            <Textarea
-              id="requiredDocuments"
-              name="requiredDocuments"
-              rows={3}
-              defaultValue={posting?.requiredDocuments?.join("\n")}
-            />
-          </Field>
+          <fieldset className="flex flex-col gap-xs">
+            <legend className="text-sm font-medium">Required Documents</legend>
+            {requiredDocumentOptions.map((document) => (
+              <div key={document} className="flex items-center gap-xs">
+                <Checkbox
+                  id={`requiredDocuments-${document}`}
+                  name="requiredDocuments"
+                  value={document}
+                  defaultChecked={checkedDocuments.includes(document)}
+                />
+                <Label htmlFor={`requiredDocuments-${document}`} className="font-normal">
+                  {document}
+                </Label>
+              </div>
+            ))}
+          </fieldset>
           <Field
             name="screeningCriteria"
             label="Screening criteria (one per line)"
