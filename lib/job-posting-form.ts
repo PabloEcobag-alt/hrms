@@ -1,4 +1,4 @@
-import type { JobPostingFields, JobTemplateFields } from "./job-postings";
+import type { JobPostingFields, JobPostingStatus, JobTemplateFields } from "./job-postings";
 
 export const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship"];
 
@@ -101,4 +101,16 @@ export function addRequiredDocument(
     return { error: "That document is already listed." };
   }
   return { documents: [...documents, trimmed] };
+}
+
+/** Which footer actions the shared form offers when editing a posting in the given status. */
+export function editFooter(status: JobPostingStatus) {
+  return {
+    saveAsDraft: status === "draft",
+    publish: status === "draft",
+    saveChanges: status === "open",
+    delete: status === "draft",
+    close: status === "open",
+    fill: status === "open",
+  };
 }

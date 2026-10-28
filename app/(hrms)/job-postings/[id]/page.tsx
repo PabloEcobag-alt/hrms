@@ -3,6 +3,7 @@ import { ChevronLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_BADGE, STATUS_LABEL } from "@/lib/job-posting-view";
+import { editFooter } from "@/lib/job-posting-form";
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
@@ -32,6 +33,7 @@ export default async function Page({
   const posting = await (await postingsForRequest()).read(id);
 
   if (!posting) notFound();
+  const footer = editFooter(posting.status);
 
   return (
     <div className="flex flex-col gap-md p-md sm:p-lg">
@@ -54,27 +56,22 @@ export default async function Page({
           {INTRO[posting.status]}
         </p>
       </div>
-      {posting.status === "draft" && (
-        <JobPostingForm
-          posting={posting}
-          action={updateDraft.bind(null, id)}
-          deleteAction={removeDraft.bind(null, id)}
-          canPublish
-          saveTemplateAction={saveAsTemplate}
-        />
-      )}
-      {posting.status === "open" && (
-        <JobPostingForm
-          posting={posting}
-          action={updateOpen.bind(null, id)}
-          closeAction={closePosting.bind(null, id)}
-          fillAction={fillPosting.bind(null, id)}
-          saveTemplateAction={saveAsTemplate}
-        />
-      )}
-      {(posting.status === "closed" || posting.status === "filled") && (
-        <JobPostingForm posting={posting} readOnly />
-      )}
+      <JobPostingForm
+        posting={posting}
+        action={
+          footer.saveAsDraft
+            ? updateDraft.bind(null, id)
+            : footer.saveChanges
+              ? updateOpen.bind(null, id)
+              : undefined
+        }
+        deleteAction={footer.delete ? removeDraft.bind(null, id) : undefined}
+        closeAction={footer.close ? closePosting.bind(null, id) : undefined}
+        fillAction={footer.fill ? fillPosting.bind(null, id) : undefined}
+        canPublish={footer.publish}
+        readOnly={!footer.saveAsDraft && !footer.saveChanges}
+        saveTemplateAction={saveAsTemplate}
+      />
     </div>
   );
 }
