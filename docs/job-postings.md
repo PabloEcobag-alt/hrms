@@ -173,3 +173,26 @@ out-of-range values (maximum 2,147,483,647) with reason `validation` and an
 `openings` field error. Templates retain the value and `startPosting` copies it
 independently into the Draft. Openings remain optional when publishing. Existing
 forms omit this backend-only field, so editing other content preserves it.
+
+## Monthly salary range (#56)
+
+Apply `0007-job-salary-range.sql` before deploying these callers. Both shared
+Careers tables (`public.job_postings` and `public.job_templates`) gain nullable
+`salary_from` and `salary_to` double-precision columns, expressed in PHP per month.
+Existing rows keep `NULL` bounds; there is no default or backfill. Careers must
+include both nullable numeric columns in its schema declaration and preserve
+the non-negative, finite-value and ordered-range constraints in future migrations.
+Application rollback can leave these additive columns in place.
+
+Server results expose `salaryFrom: number | null` and `salaryTo: number | null`.
+Create defaults omitted bounds to `null`; edits preserve omitted bounds and clear
+explicit `null` bounds. Either bound can be unspecified; both `null` means the
+salary is hidden on Careers. Equal bounds, zero and fractional amounts are valid.
+When both bounds exist, salary-to must be at least salary-from. Violations return
+`validation` with `salaryFrom` and `salaryTo` field errors, including partial edits
+against existing bounds. Invalid non-numeric, negative or non-finite bounds return
+an error on that field. Database constraints enforce the resulting range atomically
+with the content and audit write. Templates retain the bounds and `startPosting`
+copies them independently into the Draft. Publishing does not require a salary.
+Current forms omit these backend fields, preserving stored salary on other edits;
+Careers salary rendering and Staff form controls are separate UI work.

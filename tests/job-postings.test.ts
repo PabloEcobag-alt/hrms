@@ -19,6 +19,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
   await db.exec(await readFile(new URL("./fixtures/careers-applications.sql", import.meta.url), "utf8"));
@@ -389,6 +390,7 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0006-job-openings.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -532,5 +534,79 @@ it("migrates existing rows to unspecified openings and safely reapplies", async 
     }
   } finally {
     await legacy.close();
+  }
+});
+
+it("keeps monthly salary bounds through template copies, publication, omission and clearing", async () => {
+  const templates = jobTemplatesFor(handle, db);
+  const postings = jobPostingsFor(handle, db);
+  expect(await postings.saveDraft({})).toMatchObject({ salaryFrom: null, salaryTo: null });
+  expect(await templates.create({})).toMatchObject({ salaryFrom: null, salaryTo: null });
+  const template = await templates.create({ ...publishable, salaryFrom: 20000.50, salaryTo: 30000 });
+  expect(await templates.edit(template.id, { title: "Senior Recruiter" })).toMatchObject({ salaryFrom: 20000.50, salaryTo: 30000 });
+  const draft = await templates.startPosting(template.id);
+  expect(draft).toMatchObject({ salaryFrom: 20000.50, salaryTo: 30000 });
+  await templates.edit(template.id, { salaryFrom: null, salaryTo: null });
+  expect(await templates.startPosting(template.id)).toMatchObject({ salaryFrom: null, salaryTo: null });
+  expect(await postings.editDraft(draft.id, { deadline: publishable.deadline })).toMatchObject({ salaryFrom: 20000.50, salaryTo: 30000 });
+  expect(await postings.publish(draft.id)).toMatchObject({ salaryFrom: 20000.50, salaryTo: 30000 });
+  expect(await postings.editOpen(draft.id, { salaryFrom: 30000 })).toMatchObject({ salaryFrom: 30000, salaryTo: 30000 });
+  expect(await postings.list()).toContainEqual(expect.objectContaining({ id: draft.id, salaryFrom: 30000, salaryTo: 30000 }));
+  expect(await postings.editOpen(draft.id, { salaryFrom: null })).toMatchObject({ salaryFrom: null, salaryTo: 30000 });
+  expect(await postings.editOpen(draft.id, { salaryTo: null })).toMatchObject({ salaryFrom: null, salaryTo: null });
+  expect(await templates.list()).toContainEqual(expect.objectContaining({ id: template.id, salaryFrom: null, salaryTo: null }));
+  expect(await postings.read(draft.id)).toMatchObject({ salaryFrom: null, salaryTo: null });
+});
+
+it("rejects inverted salary ranges including one-bound edits without changing data or emitting audit events", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  const draft = await postings.saveDraft({ ...publishable, salaryFrom: 20000, salaryTo: 30000 });
+  const open = await postings.saveDraft({ ...publishable, salaryFrom: 20000, salaryTo: 30000 });
+  await postings.publish(open.id);
+  const template = await templates.create({ salaryFrom: 20000, salaryTo: 30000 });
+  const before = auditRequests.length;
+  for (const fields of [{ salaryFrom: 40000, salaryTo: 10000 }, { salaryFrom: 40000 }, { salaryTo: 10000 }]) {
+    for (const action of [() => postings.editDraft(draft.id, fields), () => postings.editOpen(open.id, fields), () => templates.edit(template.id, fields)]) {
+      await expect(action()).rejects.toMatchObject({ reason: "validation", fieldErrors: { salaryFrom: expect.any(String), salaryTo: expect.any(String) } });
+    }
+  }
+  for (const action of [() => postings.saveDraft({ salaryFrom: 2, salaryTo: 1 }), () => templates.create({ salaryFrom: 2, salaryTo: 1 })]) {
+    await expect(action()).rejects.toMatchObject({ reason: "validation", fieldErrors: { salaryTo: expect.any(String) } });
+  }
+  expect(auditRequests).toHaveLength(before);
+  expect(await postings.read(draft.id)).toEqual(draft);
+  expect(await postings.read(open.id)).toMatchObject({ salaryFrom: 20000, salaryTo: 30000 });
+  expect(await templates.list()).toEqual([template]);
+});
+
+it.each([-1, NaN, Infinity, -Infinity, "20000", true])("rejects invalid salary bounds %s at every content write", async (value) => {
+  const postings = jobPostingsFor(handle, db);
+  const templates = jobTemplatesFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  const open = await postings.saveDraft(publishable);
+  await postings.publish(open.id);
+  const template = await templates.create({});
+  for (const field of ["salaryFrom", "salaryTo"] as const) {
+    const fields = { [field]: value } as Parameters<typeof postings.saveDraft>[0];
+    for (const action of [() => postings.saveDraft(fields), () => postings.editDraft(draft.id, fields), () => postings.editOpen(open.id, fields), () => templates.create(fields), () => templates.edit(template.id, fields)]) {
+      await expect(action()).rejects.toMatchObject({ reason: "validation", fieldErrors: { [field]: expect.any(String) } });
+    }
+  }
+});
+
+it("adds nullable salary bounds to existing Careers rows and safely reapplies constraints", async () => {
+  await db.exec("ALTER TABLE job_postings DROP COLUMN salary_from, DROP COLUMN salary_to; ALTER TABLE job_templates DROP COLUMN salary_from, DROP COLUMN salary_to");
+  await db.exec("INSERT INTO job_postings (id) VALUES ('legacy-salary'); INSERT INTO job_templates (id) VALUES ('legacy-salary')");
+  const sql = await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8");
+  await db.exec(sql);
+  await db.exec(sql);
+  for (const table of ["job_postings", "job_templates"]) {
+    expect((await db.query(`SELECT salary_from, salary_to FROM ${table}`)).rows).toEqual([{ salary_from: null, salary_to: null }]);
+    await expect(db.exec(`UPDATE ${table} SET salary_from = 30000, salary_to = 20000`)).rejects.toBeDefined();
+    for (const invalid of ["-1", "'NaN'", "'Infinity'"]) {
+      await expect(db.exec(`UPDATE ${table} SET salary_from = ${invalid}`)).rejects.toBeDefined();
+    }
+    await db.exec(`UPDATE ${table} SET salary_from = 0, salary_to = 0`);
   }
 });
