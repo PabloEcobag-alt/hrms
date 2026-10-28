@@ -113,3 +113,25 @@ it("does not announce historical Open postings or mark a failed audience lookup 
   await retryJobPostingAnnouncements(db);
   expect(sends.filter(s => s.path === "/notifications/notifications")).toHaveLength(4);
 });
+
+it("keeps announcing later postings when twenty earlier announcements cannot complete", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const fields = { title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", deadline: new Date("2030-01-01") };
+  for (let i = 0; i < 20; i++) {
+    const draft = await postings.saveDraft(fields);
+    await postings.publish(draft.id);
+  }
+  fail = true;
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    // All earlier audiences exist, but none of their deliveries can finish.
+    await retryJobPostingAnnouncements(db);
+    await retryJobPostingAnnouncements(db);
+    const later = await postings.saveDraft({ ...fields, title: "New opening" });
+    await postings.publish(later.id);
+    sends = [];
+    fail = false;
+    await retryJobPostingAnnouncements(db);
+    expect(sends.filter(s => s.body.title === "New Job Posting: New opening")).toHaveLength(5);
+  } finally { log.mockRestore(); }
+});

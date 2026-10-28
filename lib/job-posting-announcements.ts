@@ -7,7 +7,7 @@ export async function deliverAnnouncements(db: PostingDatabase): Promise<void> {
     if (base.protocol !== "https:") throw new Error("CAREERS_URL must use HTTPS");
     const pending = await db.query<{ posting_id: string; title: string }>(
       `SELECT posting_id, title FROM public.hrms_posting_announcements
-       WHERE completed_at IS NULL ORDER BY posting_id LIMIT 20`);
+       WHERE completed_at IS NULL AND NOT audience_ready ORDER BY posting_id LIMIT 20`);
     for (const announcement of pending.rows) {
       const link = new URL(`/careers/${encodeURIComponent(announcement.posting_id)}`, base).href;
       const title = `New Job Posting: ${announcement.title}`;
