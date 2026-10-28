@@ -22,6 +22,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0009-job-template-name.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0010-job-template-lists.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
   await db.exec(await readFile(new URL("./fixtures/careers-applications.sql", import.meta.url), "utf8"));
@@ -395,6 +396,7 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(await readFile(new URL("../migrations/0007-job-salary-range.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0008-job-work-schedule.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0009-job-template-name.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0010-job-template-lists.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
@@ -731,15 +733,16 @@ it.each([null, new Date("2000-01-01"), new Date("invalid")])("refuses a missing,
 
 
 it.each(["saveDraft", "createAndPublish"] as const)("%s saves a named independent template atomically", async (operation) => {
-  const posting = await jobPostingsFor(handle, db)[operation](publishable, { saveAsTemplate: { name: "  Recruitment base  " } });
+  const lists = { responsibilities: ["Recruit Staff"], benefits: ["Paid leave"] };
+  const posting = await jobPostingsFor(handle, db)[operation]({ ...publishable, ...lists }, { saveAsTemplate: { name: "  Recruitment base  " } });
   const [template] = await jobTemplatesFor(handle, db).list();
-  expect(template).toMatchObject({ name: "Recruitment base", title: publishable.title });
+  expect(template).toMatchObject({ ...lists, name: "Recruitment base", title: publishable.title });
   expect(template.id).not.toBe(posting.id);
   expect(template).not.toHaveProperty("deadline");
   expect(template).not.toHaveProperty("status");
   expect(template).not.toHaveProperty("firstPublishedAt");
   const draft = await jobTemplatesFor(handle, db).startPosting(template.id);
-  expect(draft).toMatchObject({ ...publishable, deadline: null, status: "draft", firstPublishedAt: null });
+  expect(draft).toMatchObject({ ...publishable, ...lists, deadline: null, status: "draft", firstPublishedAt: null });
 });
 
 
@@ -824,4 +827,31 @@ it("publishes with omitted or explicitly empty Responsibilities and Benefits", a
   const direct = await postings.createAndPublish({ ...publishable, responsibilities: [], benefits: [] });
   expect(direct).toMatchObject({ status: "open", responsibilities: [], benefits: [] });
   expect(await postings.editOpen(direct.id, { title: "Updated role" })).toMatchObject({ responsibilities: [], benefits: [] });
+});
+
+it("round-trips Template lists and copies them independently to Drafts", async () => {
+  const templates = jobTemplatesFor(handle, db);
+  const postings = jobPostingsFor(handle, db);
+  const lists = { responsibilities: ["Serve customers", "Close shop"], benefits: ["Paid leave", "Meals"] };
+  const template = await templates.create(lists);
+  expect(template).toMatchObject(lists);
+  expect(await jobTemplatesFor(handle, db).list()).toEqual([template]);
+  const draft = await templates.startPosting(template.id);
+  expect(draft).toMatchObject({ ...lists, status: "draft", deadline: null });
+  await postings.editDraft(draft.id, { responsibilities: ["One-off duty"], benefits: [] });
+  expect(await templates.list()).toEqual([template]);
+  const edited = await templates.edit(template.id, { responsibilities: [], benefits: ["Insurance"] });
+  expect(edited).toMatchObject({ responsibilities: [], benefits: ["Insurance"] });
+  expect(await templates.edit(template.id, {})).toEqual(edited);
+  expect(await postings.read(draft.id)).toMatchObject({ responsibilities: ["One-off duty"], benefits: [] });
+  expect(await templates.startPosting(template.id)).toMatchObject({ responsibilities: [], benefits: ["Insurance"] });
+});
+
+
+it("adds empty lists to existing Templates and can reapply the migration", async () => {
+  await db.exec("ALTER TABLE job_templates DROP COLUMN responsibilities, DROP COLUMN benefits; INSERT INTO job_templates (id, title) VALUES ('legacy-lists', 'Cashier')");
+  const migration = await readFile(new URL("../migrations/0010-job-template-lists.sql", import.meta.url), "utf8");
+  await db.exec(migration);
+  await db.exec(migration);
+  expect(await jobTemplatesFor(handle, db).list()).toMatchObject([{ id: "legacy-lists", title: "Cashier", responsibilities: [], benefits: [] }]);
 });
