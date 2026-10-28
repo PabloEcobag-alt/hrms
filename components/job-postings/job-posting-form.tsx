@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { deadlineInputValue, EMPLOYMENT_TYPES } from "@/lib/job-posting-form";
+import { deadlineInputValue, EMPLOYMENT_TYPES, splitRequirements } from "@/lib/job-posting-form";
 import type { JobPosting } from "@/lib/job-postings";
 import type { FormState } from "@/app/(hrms)/job-postings/actions";
 import { DeleteDraftButton } from "./delete-draft-button";
@@ -143,9 +143,10 @@ export function JobPostingForm({
       ERROR_TEXT[field] ?? "This field is required.",
     ]),
   ) as Record<string, string>;
+  const sections = splitRequirements(posting?.requirements ?? "");
   // Marks an input as invalid for assistive tech and styling.
-  const invalid = (name: string) =>
-    errors[name]
+  const invalid = (name: string, errorKey = name) =>
+    errors[errorKey]
       ? { "aria-invalid": true, "aria-describedby": `${name}-error` }
       : {};
 
@@ -231,17 +232,34 @@ export function JobPostingForm({
               </Field>
             )}
           </div>
-          <Field
-            name="description"
-            label="Description"
-            error={errors.description}
-          >
+        </Section>
+        <Section
+          title="Job description"
+          description="Shown on the careers page and in the applicant’s confirmation email."
+        >
+          <Field name="summary" label="Summary *" error={errors.description}>
             <Textarea
-              id="description"
-              name="description"
-              {...invalid("description")}
-              rows={5}
+              id="summary"
+              name="summary"
+              {...invalid("summary", "description")}
+              rows={3}
               defaultValue={posting?.description}
+            />
+          </Field>
+          <Field name="responsibilities" label="Responsibilities">
+            <Textarea
+              id="responsibilities"
+              name="responsibilities"
+              rows={4}
+              defaultValue={sections.responsibilities}
+            />
+          </Field>
+          <Field name="qualifications" label="Qualifications">
+            <Textarea
+              id="qualifications"
+              name="qualifications"
+              rows={3}
+              defaultValue={sections.qualifications}
             />
           </Field>
         </Section>
@@ -272,16 +290,8 @@ export function JobPostingForm({
         </Section>
         <Section
           title="Requirements and screening"
-          description="Optional. Shown to Applicants, who attach each required Document when they apply."
+          description="Optional. Applicants attach each required Document when they apply."
         >
-          <Field name="requirements" label="Requirements">
-            <Textarea
-              id="requirements"
-              name="requirements"
-              rows={4}
-              defaultValue={posting?.requirements}
-            />
-          </Field>
           <Field
             name="requiredDocuments"
             label="Required Documents (one per line)"

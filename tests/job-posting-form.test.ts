@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deadlineInputValue, fieldsFromForm, templateFieldsFromForm } from "@/lib/job-posting-form";
+import { deadlineInputValue, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm } from "@/lib/job-posting-form";
 
 const form = (entries: Record<string, string>) => {
   const data = new FormData();
@@ -16,8 +16,9 @@ describe("job posting form", () => {
           department: "Retail",
           employmentType: "Full-time",
           location: "Manila",
-          description: "Serve customers",
-          requirements: "Friendly",
+          summary: "Serve customers",
+          responsibilities: "• Ring up sales",
+          qualifications: "Friendly",
           requiredDocuments: "Resume\r\n\n  NBI clearance \n",
           screeningCriteria: "Cash handling",
           deadline: "2026-12-31",
@@ -29,7 +30,7 @@ describe("job posting form", () => {
       employmentType: "Full-time",
       location: "Manila",
       description: "Serve customers",
-      requirements: "Friendly",
+      requirements: "Responsibilities:\n• Ring up sales\n\nQualifications:\nFriendly",
       requiredDocuments: ["Resume", "NBI clearance"],
       screeningCriteria: ["Cash handling"],
       deadline: new Date("2026-12-31T23:59:59.999Z"),
@@ -79,6 +80,27 @@ describe("job posting form", () => {
   it("formats a deadline for a date input", () => {
     expect(deadlineInputValue(new Date("2026-12-31T23:59:59.999Z"))).toBe("2026-12-31");
     expect(deadlineInputValue(null)).toBe("");
+  });
+});
+
+describe("job description sections", () => {
+  it("stores Summary as the description and the other two sections together as requirements", () => {
+    const fields = fieldsFromForm(form({ summary: " Help out ", responsibilities: "", qualifications: " Diploma " }));
+    expect(fields.description).toBe("Help out");
+    expect(fields.requirements).toBe("Qualifications:\nDiploma");
+    expect(fieldsFromForm(form({ responsibilities: "Pack" })).requirements).toBe("Responsibilities:\nPack");
+    expect(fieldsFromForm(form({})).requirements).toBe("");
+  });
+
+  it("round-trips Responsibilities and Qualifications, including multiple lines", () => {
+    const sections = { responsibilities: "• A\n• B", qualifications: "• C\n\n• D" };
+    expect(splitRequirements(joinRequirements(sections))).toEqual(sections);
+    expect(splitRequirements(joinRequirements({ responsibilities: "", qualifications: "Q" }))).toEqual({ responsibilities: "", qualifications: "Q" });
+  });
+
+  it("shows legacy unheaded requirements under Qualifications", () => {
+    expect(splitRequirements("Experience needed")).toEqual({ responsibilities: "", qualifications: "Experience needed" });
+    expect(splitRequirements("")).toEqual({ responsibilities: "", qualifications: "" });
   });
 });
 

@@ -20,8 +20,11 @@ export function fieldsFromForm(data: FormData): JobPostingFields {
     department: text(data, "department"),
     employmentType: text(data, "employmentType"),
     location: text(data, "location"),
-    description: text(data, "description"),
-    requirements: text(data, "requirements"),
+    description: text(data, "summary"),
+    requirements: joinRequirements({
+      responsibilities: text(data, "responsibilities"),
+      qualifications: text(data, "qualifications"),
+    }),
     requiredDocuments: lines(data, "requiredDocuments"),
     screeningCriteria: lines(data, "screeningCriteria"),
     deadline: deadline && !Number.isNaN(deadline.getTime()) ? deadline : null,
@@ -29,6 +32,36 @@ export function fieldsFromForm(data: FormData): JobPostingFields {
     salaryFrom: numberFromForm(data, "salaryFrom"),
     salaryTo: numberFromForm(data, "salaryTo"),
     workSchedule: text(data, "workSchedule") || null,
+  };
+}
+
+type RequirementSections = { responsibilities: string; qualifications: string };
+
+const RESPONSIBILITIES = "Responsibilities:";
+const QUALIFICATIONS = "Qualifications:";
+
+/** The requirements field holds both sections as headed blocks; empty sections are left out. */
+export function joinRequirements({ responsibilities, qualifications }: RequirementSections): string {
+  return [
+    responsibilities && `${RESPONSIBILITIES}\n${responsibilities}`,
+    qualifications && `${QUALIFICATIONS}\n${qualifications}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Inverse of joinRequirements. Text without headings predates the split and counts as Qualifications. */
+export function splitRequirements(requirements: string): RequirementSections {
+  const headed = requirements.startsWith(RESPONSIBILITIES) || requirements.startsWith(QUALIFICATIONS);
+  if (!headed) return { responsibilities: "", qualifications: requirements.trim() };
+
+  const qualificationsAt = requirements.indexOf(`\n\n${QUALIFICATIONS}\n`);
+  const responsibilitiesPart = qualificationsAt === -1 ? requirements : requirements.slice(0, qualificationsAt);
+  const qualificationsPart = qualificationsAt === -1 ? "" : requirements.slice(qualificationsAt + 2);
+  const body = (part: string, heading: string) => (part.startsWith(heading) ? part.slice(heading.length).trim() : "");
+  return {
+    responsibilities: body(responsibilitiesPart, RESPONSIBILITIES),
+    qualifications: body(qualificationsAt === -1 ? responsibilitiesPart : qualificationsPart, QUALIFICATIONS),
   };
 }
 
