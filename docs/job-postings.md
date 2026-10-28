@@ -80,3 +80,25 @@ Careers table definition and applying the migration. It never connects to shared
 rows. Only the module interface is exercised; the fake Portal sits at the HTTP
 boundary. Existing Open/Closed/Filled rows are fixtures, not test-only publishing
 operations. `npm run typecheck`, `npm run lint`, and `npm test` validate the repo.
+
+## Job Templates
+
+Ticket #34 adds `jobTemplatesFor(sessionHandle, db?)` from `lib/job-postings.ts`,
+with the same per-operation Portal access checks and disposable database seam.
+`create(fields)` explicitly saves reusable content; callers may pass a Job Posting
+for "Save as template". Only content fields are stored: deadline, status, posting
+id and timestamps are never copied from the caller. Empty templates are allowed.
+`list()` returns templates ordered by latest update, then id. `edit(id, fields)`
+patches supplied content fields; empty strings/arrays clear values and omitted
+fields are preserved. `delete(id)` removes only the template.
+
+`startPosting(id)` atomically copies the template into a new editable Draft with
+no deadline. No relationship is retained, so subsequent edits/deletes on either
+side leave the other untouched. Freehand Draft saves never create templates.
+Edit, delete and start refuse missing ids with `JobTemplateError("not-found")`;
+access failures use `denied`, `invalid` or `unavailable`.
+
+Apply `0002-job-templates.sql` with `npm run db:migrate` before using templates.
+It adds `public.job_templates` without changing existing Careers tables or rows.
+Application rollback can leave the added table in place. Auditing remains in its
+separate follow-up ticket.

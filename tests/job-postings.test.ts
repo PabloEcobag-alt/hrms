@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { closeExpiredJobPostings, jobPostingsFor } from "@/lib/job-postings";
+import { closeExpiredJobPostings, jobPostingsFor, jobTemplatesFor } from "@/lib/job-postings";
 import { FAKE_PORTAL_URL, FAKE_SECRET, FAKE_SYSTEM, FakePortal, portalFetch } from "./fake-portal";
 
 const ada = { name: "Ada Okafor", username: "ada", email: "ada@example.test", role: "HR Officer" };
@@ -13,6 +13,7 @@ beforeEach(async () => {
   db = new PGlite();
   await db.exec(await readFile(new URL("./fixtures/careers-job-postings.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0001-job-posting-drafts.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8"));
   portal = new FakePortal();
   handle = portal.signIn(ada, ["Recruitment and Hiring"]);
   vi.stubGlobal("fetch", portalFetch(portal));
@@ -226,4 +227,70 @@ it("scheduled maintenance persists deadline closure without a Staff read", async
   await closeExpiredJobPostings(db);
   await closeExpiredJobPostings(db);
   expect((await db.query("SELECT status FROM job_postings WHERE id = $1", [draft.id])).rows[0]).toEqual({ status: "closed" });
+});
+
+it("explicitly saves all reusable fields without a deadline and persists templates", async () => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft({ ...publishable, requirements: "Experience", requiredDocuments: ["CV"], screeningCriteria: ["Interview"] });
+  const templates = jobTemplatesFor(handle, db);
+  expect(await templates.list()).toEqual([]);
+  const saved = await templates.create(draft);
+  expect(saved).toMatchObject({ title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila", description: "Hire Staff", requirements: "Experience", requiredDocuments: ["CV"], screeningCriteria: ["Interview"] });
+  expect(saved).not.toHaveProperty("deadline");
+  expect(saved).not.toHaveProperty("status");
+  expect(await jobTemplatesFor(handle, db).list()).toEqual([saved]);
+});
+
+it("starts an editable Draft with independent values and no deadline or template link", async () => {
+  const templates = jobTemplatesFor(handle, db);
+  const template = await templates.create({ ...publishable, requiredDocuments: ["CV"], screeningCriteria: ["Interview"] });
+  const draft = await templates.startPosting(template.id);
+  expect(draft).toMatchObject({ title: "Recruiter", status: "draft", deadline: null, requiredDocuments: ["CV"], screeningCriteria: ["Interview"] });
+  expect(draft.id).not.toBe(template.id);
+  const postings = jobPostingsFor(handle, db);
+  await postings.editDraft(draft.id, { title: "One-off", requiredDocuments: [] });
+  expect(await templates.list()).toEqual([template]);
+  await templates.edit(template.id, { title: "Future role", requiredDocuments: ["ID"] });
+  expect(await postings.read(draft.id)).toMatchObject({ title: "One-off", requiredDocuments: [] });
+  await templates.delete(template.id);
+  expect(await templates.list()).toEqual([]);
+  expect(await postings.read(draft.id)).toMatchObject({ title: "One-off", deadline: null });
+});
+
+it("patches only reusable template fields and refuses missing templates", async () => {
+  const templates = jobTemplatesFor(handle, db);
+  const saved = await templates.create({});
+  expect(saved).toMatchObject({ title: "", requiredDocuments: [], screeningCriteria: [] });
+  expect(await templates.edit(saved.id, {})).toEqual(saved);
+  await templates.edit(saved.id, { title: "HR Officer", department: "People" });
+  const edited = await templates.edit(saved.id, { title: "", ...JSON.parse('{"deadline":"2030-01-01","status":"open","id":"injected"}') });
+  expect(edited).toMatchObject({ id: saved.id, title: "", department: "People" });
+  expect(edited).not.toHaveProperty("deadline");
+  expect(edited).not.toHaveProperty("status");
+  expect(await jobTemplatesFor(handle, db).list()).toEqual([edited]);
+  for (const action of [() => templates.edit("missing", {}), () => templates.delete("missing"), () => templates.startPosting("missing")]) {
+    await expect(action()).rejects.toMatchObject({ reason: "not-found" });
+  }
+  expect(await jobPostingsFor(handle, db).list()).toEqual([]);
+});
+
+it("rechecks Portal access on every template operation and fails closed", async () => {
+  const templates = jobTemplatesFor(handle, db);
+  const saved = await templates.create({ title: "Original" });
+  const denied = jobTemplatesFor(portal.signIn(ada, ["Attendance"]), db);
+  for (const state of ["denied", "unavailable", "invalid"] as const) {
+    portal.unavailable = state === "unavailable";
+    if (state === "invalid") portal.endSession(handle);
+    const restricted = state === "denied" ? denied : templates;
+    for (const action of [() => restricted.create({}), () => restricted.list(),
+      () => restricted.edit(saved.id, { title: "Forbidden" }), () => restricted.delete(saved.id),
+      () => restricted.startPosting(saved.id)]) {
+      await expect(action()).rejects.toMatchObject({ reason: state });
+    }
+  }
+  portal.unavailable = false;
+  const freshHandle = portal.signIn(ada, ["Recruitment and Hiring"]);
+  expect(await jobTemplatesFor(freshHandle, db).list()).toEqual([saved]);
+  expect(await jobPostingsFor(freshHandle, db).list()).toEqual([]);
+  await expect(jobTemplatesFor(undefined, db).list()).rejects.toMatchObject({ reason: "invalid" });
 });
