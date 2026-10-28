@@ -94,14 +94,14 @@ export const systems: SystemItem[] = [
     desc: "All systems hub & app launcher",
     icon: LayoutGrid,
     active: false,
-    url: process.env.NEXT_PUBLIC_HOST_URL ?? "https://br-auth-three.vercel.app/",
+    url: "https://br-auth-three.vercel.app/",
   },
   {
     fullName: "Customer Relationship Management",
     desc: "Contact profiles, tickets & marketing",
     icon: Building2,
     active: false,
-    url: process.env.NEXT_PUBLIC_CRMS_URL ?? "https://epic-crms.vercel.app/",
+    url: "https://epic-crms.vercel.app/",
   },
   {
     fullName: "Human Resource Management",
@@ -115,13 +115,13 @@ export const systems: SystemItem[] = [
     desc: "Retail & register checkout",
     icon: CreditCard,
     active: false,
-    url: process.env.NEXT_PUBLIC_POS_URL ?? "https://web-pos-alpha-vert.vercel.app/",
+    url: "https://web-pos-alpha-vert.vercel.app/",
   },
   {
     fullName: "IMS - Inventory Management System",
     desc: "Inventory & logistics",
     icon: Truck,
     active: false,
-    url: process.env.NEXT_PUBLIC_SCMS_URL ?? "https://br-sims.vercel.app/",
+    url: "https://br-sims.vercel.app/",
   },
 ];
