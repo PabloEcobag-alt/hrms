@@ -213,7 +213,7 @@ it.each([
     expect(attempt.path).toBe("/audit/events");
     expect(attempt.body).toMatchObject({
       source: "HRMS", module: "Recruitment and Hiring", action, outcome: "success",
-      actor: { type: "staff", id: "ada", display_name: "Ada" },
+      actor: { type: "user", id: "ada", display_name: "Ada" },
       target: { type: "job_posting", id: posting.id, display_name: "Recruiter" },
       idempotency_key: expect.any(String),
     });
@@ -265,7 +265,7 @@ it.each(["saveDraft", "editDraft", "editOpen"] as const)("delivers %s with its o
   expect(sends[0]).toMatchObject({ path: "/audit/events", body: {
     source: "HRMS", module: "Recruitment and Hiring", outcome: "success",
     action: method === "saveDraft" ? "job_posting.created" : "job_posting.updated",
-    actor: { type: "staff", id: "ada", display_name: "Ada" },
+    actor: { type: "user", id: "ada", display_name: "Ada" },
     target: { type: "job_posting", id: saved.id, display_name: "Senior Recruiter" },
     idempotency_key: expect.any(String), occurred_at: expect.any(String),
   } });
@@ -338,7 +338,7 @@ it.each(["direct", "saveDraft", "editDraft", "createAndPublish", "publish"] as c
     const event = queued.find(row => row.payload.action === "job_template.created")!;
     expect(event.payload).toMatchObject({
       source: "HRMS", module: "Recruitment and Hiring", action: "job_template.created", outcome: "success",
-      actor: { type: "staff", id: "ada", display_name: "Ada" },
+      actor: { type: "user", id: "ada", display_name: "Ada" },
       target: { type: "job_template", id: template.id, display_name: "Recruiter" },
       occurred_at: expect.any(String), idempotency_key: event.id,
     });
@@ -406,7 +406,7 @@ it.each(["edit", "delete"] as const)("delivers Job Template %s with its own acti
   expect(sends[0]).toMatchObject({ path: "/audit/events", body: {
     source: "HRMS", module: "Recruitment and Hiring", outcome: "success",
     action: method === "edit" ? "job_template.updated" : "job_template.deleted",
-    actor: { type: "staff", id: "ada", display_name: "Ada" },
+    actor: { type: "user", id: "ada", display_name: "Ada" },
     target: { type: "job_template", id: template.id, display_name: method === "edit" ? "Senior Recruiter" : "Recruiter" },
     idempotency_key: expect.any(String), occurred_at: expect.any(String),
   } });
