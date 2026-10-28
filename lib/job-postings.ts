@@ -20,6 +20,7 @@ export type JobPostingFields = {
 export type JobPosting = JobPostingFields & {
   id: string;
   status: JobPostingStatus;
+  firstPublishedAt: Date | null;
   updatedAt: Date;
 };
 
@@ -49,7 +50,7 @@ export class JobPostingError extends Error {
 
 const columns = `id, title, department, employment_type AS "employmentType",
   location, description, requirements, required_documents AS "requiredDocuments",
-  screening_criteria AS "screeningCriteria", deadline, status, updated_at AS "updatedAt"`;
+  screening_criteria AS "screeningCriteria", deadline, status, first_published_at AS "firstPublishedAt", updated_at AS "updatedAt"`;
 
 /** Internal maintenance entry point; callers must authenticate the scheduled request. */
 export async function closeExpiredJobPostings(db: PostingDatabase = database): Promise<void> {
@@ -92,6 +93,9 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
     const values: unknown[] = [id, status, target, whitespace];
     const expressions: Record<string, string> = { ...names };
     const updates = ["status = $3", "updated_at = clock_timestamp()"];
+    if (status === "draft" && target === "open") {
+      updates.push("first_published_at = COALESCE(first_published_at, clock_timestamp())");
+    }
     for (const field of Object.keys(names) as (keyof JobPostingFields)[]) {
       if (fields[field] === undefined) continue;
       const json = field === "requiredDocuments" || field === "screeningCriteria";

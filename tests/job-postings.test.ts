@@ -17,6 +17,7 @@ beforeEach(async () => {
   await db.exec(await readFile(new URL("../migrations/0002-job-templates.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
   await db.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
   await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY, email text, "emailVerified" boolean);
     CREATE TABLE applicant_profiles (applicant_id text PRIMARY KEY, job_alerts_opt_in boolean);`);
   vi.stubEnv("CAREERS_URL", "https://careers.test");
@@ -89,6 +90,7 @@ it.each(["open", "closed", "filled"] as const)("preserves an existing %s Job Pos
     VALUES ($1,'Existing role','People','Full time','Manila','Recruitment','', '[]','[]','2030-01-01',$2)`, [status, status]);
   const postings = jobPostingsFor(handle, db);
   const original = await postings.read(status);
+  expect(original).toMatchObject({ firstPublishedAt: null });
   expect(await postings.list({ status })).toEqual([original]);
   await expect(postings.deleteDraft(status)).rejects.toMatchObject({ reason: "not-draft" });
   await expect(postings.editDraft(status, { title: "Changed" })).rejects.toMatchObject({ reason: "not-draft" });
@@ -145,6 +147,37 @@ const publishable = {
   title: "Recruiter", department: "People", employmentType: "Full time", location: "Manila",
   description: "Hire Staff", deadline: new Date("2030-01-01T00:00:00Z"),
 };
+
+it("adds first-published metadata without backfilling historical Open rows", async () => {
+  await db.exec("ALTER TABLE job_postings DROP COLUMN first_published_at");
+  await db.query(`INSERT INTO job_postings
+    (id,title,department,employment_type,location,description,requirements,required_documents,screening_criteria,deadline,status)
+    VALUES ('historical','Existing role','People','Full time','Manila','Recruitment','','[]','[]','2030-01-01','open')`);
+  const migration = await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8");
+  await db.exec(migration);
+  await db.exec(migration);
+  const postings = jobPostingsFor(handle, db);
+  expect(await postings.read("historical")).toMatchObject({ status: "open", firstPublishedAt: null });
+  expect(await postings.editOpen("historical", { title: "Edited role" })).toMatchObject({ firstPublishedAt: null });
+  expect(await postings.close("historical")).toMatchObject({ firstPublishedAt: null });
+});
+
+it.each(["close", "markFilled"] as const)("records first publish once and preserves it through edits and %s", async (operation) => {
+  const postings = jobPostingsFor(handle, db);
+  const draft = await postings.saveDraft(publishable);
+  expect(draft).toMatchObject({ firstPublishedAt: null });
+  expect(await postings.editDraft(draft.id, { title: "Senior Recruiter" })).toMatchObject({ firstPublishedAt: null });
+  const before = Date.now();
+  const published = await postings.publish(draft.id);
+  expect(published.firstPublishedAt).toBeInstanceOf(Date);
+  expect(published.firstPublishedAt!.getTime()).toBeGreaterThanOrEqual(before);
+  expect(published.firstPublishedAt!.getTime()).toBeLessThanOrEqual(Date.now());
+  expect(await postings.editOpen(draft.id, { title: "Recruiter" })).toMatchObject({ firstPublishedAt: published.firstPublishedAt });
+  await expect(postings.publish(draft.id)).rejects.toMatchObject({ reason: "not-draft" });
+  expect(await postings[operation](draft.id)).toMatchObject({ firstPublishedAt: published.firstPublishedAt });
+  expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ firstPublishedAt: published.firstPublishedAt });
+  expect(await postings.list()).toMatchObject([{ firstPublishedAt: published.firstPublishedAt }]);
+});
 
 it("publishes a complete Draft into the shared Careers data and edits it immediately", async () => {
   const postings = jobPostingsFor(handle, db);
@@ -205,14 +238,14 @@ it("refuses incomplete Open edits without changing shared data", async () => {
 it.each(["read", "list", "closeExpired"] as const)("moves expired Open postings to Closed on %s", async (operation) => {
   const postings = jobPostingsFor(handle, db);
   const draft = await postings.saveDraft(publishable);
-  await postings.publish(draft.id);
+  const published = await postings.publish(draft.id);
   // Simulate time passing at the database boundary; no shared database is used.
   await db.query("UPDATE job_postings SET deadline = '2000-01-01' WHERE id = $1", [draft.id]);
   if (operation === "read") await postings.read(draft.id);
   else if (operation === "list") expect(await postings.list({ status: "closed" })).toMatchObject([{ id: draft.id, status: "closed" }]);
   else await postings.closeExpired();
   expect((await db.query("SELECT status FROM job_postings WHERE id = $1", [draft.id])).rows[0]).toEqual({ status: "closed" });
-  expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ status: "closed" });
+  expect(await jobPostingsFor(handle, db).read(draft.id)).toMatchObject({ status: "closed", firstPublishedAt: published.firstPublishedAt });
   expect(await postings.list({ status: "open" })).toEqual([]);
   await expect(postings.markFilled(draft.id)).rejects.toMatchObject({ reason: "not-open" });
 });
@@ -326,6 +359,7 @@ it("adopts the existing Careers template table without losing templates", async 
     await legacy.exec(migration);
     await legacy.exec(await readFile(new URL("../migrations/0003-job-posting-audit.sql", import.meta.url), "utf8"));
     await legacy.exec(await readFile(new URL("../migrations/0004-job-posting-announcements.sql", import.meta.url), "utf8"));
+    await legacy.exec(await readFile(new URL("../migrations/0005-job-posting-first-published.sql", import.meta.url), "utf8"));
     const templates = jobTemplatesFor(handle, legacy);
     expect(await templates.list()).toMatchObject([{ id: "legacy", title: "Existing role" }]);
     const saved = await templates.create({ title: "New role" });
