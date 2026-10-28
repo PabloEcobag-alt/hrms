@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addRequiredDocument, deadlineInputValue, editFooter, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm } from "@/lib/job-posting-form";
+import { addRequiredDocument, deadlineInputValue, editFooter, statusActions, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm } from "@/lib/job-posting-form";
 
 const form = (entries: Record<string, string | string[]>) => {
   const data = new FormData();
@@ -136,16 +136,25 @@ describe("addRequiredDocument", () => {
 
 describe("editing a posting with the shared form", () => {
   it("offers Save as draft and Publish only while the posting is a Draft", () => {
-    expect(editFooter("draft")).toEqual({ saveAsDraft: true, publish: true, saveChanges: false, delete: true, close: false, fill: false });
+    expect(editFooter("draft")).toEqual({ saveAsDraft: true, publish: true, saveChanges: false, delete: true });
   });
 
-  it("saves a Published posting live, with no Save as draft, and lets it be closed or filled", () => {
-    expect(editFooter("open")).toEqual({ saveAsDraft: false, publish: false, saveChanges: true, delete: false, close: true, fill: true });
+  it("saves a Published posting live, with no Save as draft, ", () => {
+    expect(editFooter("open")).toEqual({ saveAsDraft: false, publish: false, saveChanges: true, delete: false });
   });
 
   it("offers nothing on a Closed or Filled posting", () => {
-    const none = { saveAsDraft: false, publish: false, saveChanges: false, delete: false, close: false, fill: false };
+    const none = { saveAsDraft: false, publish: false, saveChanges: false, delete: false };
     expect(editFooter("closed")).toEqual(none);
     expect(editFooter("filled")).toEqual(none);
+  });
+});
+
+describe("closing or filling a posting from its page", () => {
+  it("offers Close and Mark as filled only while the posting is Published", () => {
+    expect(statusActions("open")).toEqual({ close: true, fill: true });
+    for (const status of ["draft", "closed", "filled"] as const) {
+      expect(statusActions(status)).toEqual({ close: false, fill: false });
+    }
   });
 });
