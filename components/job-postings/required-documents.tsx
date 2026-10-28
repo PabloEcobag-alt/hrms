@@ -25,26 +25,26 @@ export function RequiredDocuments({ checked }: { checked: string[] }) {
   return (
     <fieldset className="flex flex-col gap-xs">
       <legend className="text-sm font-medium">Required Documents</legend>
-      {documents.map((document) => {
-        const custom = !DEFAULT_REQUIRED_DOCUMENTS.includes(document);
+      {documents.map((title) => {
+        const custom = !DEFAULT_REQUIRED_DOCUMENTS.includes(title);
         return (
-          <div key={document} className="flex items-center gap-xs">
+          <div key={title} className="flex items-center gap-xs">
             <Checkbox
-              id={`requiredDocuments-${document}`}
+              id={`requiredDocuments-${title}`}
               name="requiredDocuments"
-              value={document}
-              defaultChecked={custom || checked.includes(document)}
+              value={title}
+              defaultChecked={custom || checked.includes(title)}
             />
-            <Label htmlFor={`requiredDocuments-${document}`} className="font-normal">
-              {document}
+            <Label htmlFor={`requiredDocuments-${title}`} className="font-normal">
+              {title}
             </Label>
             {custom && (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label={`Remove ${document}`}
-                onClick={() => setDocuments(documents.filter((item) => item !== document))}
+                aria-label={`Remove ${title}`}
+                onClick={() => setDocuments(documents.filter((item) => item !== title))}
               >
                 <X />
               </Button>
