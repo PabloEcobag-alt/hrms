@@ -8,7 +8,6 @@ import { PostingStatusButton } from "@/components/job-postings/posting-status-bu
 import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { postingsForRequest } from "@/lib/portal/postings";
 import { requireModule } from "@/lib/portal/staff";
-import { saveAsTemplate } from "../../job-templates/actions";
 import {
   closePosting,
   fillPosting,
@@ -93,7 +92,6 @@ export default async function Page({
         published={footer.saveChanges}
         canPublish={footer.publish}
         readOnly={!footer.saveAsDraft && !footer.saveChanges}
-        saveTemplateAction={saveAsTemplate}
       />
     </div>
   );

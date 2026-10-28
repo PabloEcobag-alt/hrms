@@ -3,12 +3,12 @@
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { fieldsFromForm } from "@/lib/job-posting-form";
+import { fieldsFromForm, submitOptionsFromForm } from "@/lib/job-posting-form";
 import { JobPostingError, retryJobPostingAnnouncements, type JobPostingFields, type jobPostingsFor } from "@/lib/job-postings";
 import { LOGIN_PATH, NO_ACCESS_PATH } from "@/lib/portal/config";
 import { postingsForRequest } from "@/lib/portal/postings";
 
-export type FormState = { error?: string; fieldErrors?: Partial<Record<keyof JobPostingFields, string>> };
+export type FormState = { error?: string; fieldErrors?: Partial<Record<keyof JobPostingFields | "templateName", string>> };
 
 const MESSAGES = {
   unavailable: "HRMS could not reach the Portal or database. Please try again in a moment.",
@@ -40,10 +40,10 @@ export async function createDraft(_: FormState, data: FormData): Promise<FormSta
   const publish = data.get("intent") === "publish";
   return run(async (postings) => {
     if (publish) {
-      await postings.createAndPublish(fieldsFromForm(data));
+      await postings.createAndPublish(fieldsFromForm(data), submitOptionsFromForm(data));
       after(() => retryJobPostingAnnouncements());
     } else {
-      await postings.saveDraft(fieldsFromForm(data));
+      await postings.saveDraft(fieldsFromForm(data), submitOptionsFromForm(data));
     }
   });
 }
@@ -51,7 +51,7 @@ export async function createDraft(_: FormState, data: FormData): Promise<FormSta
 export async function updateDraft(id: string, _: FormState, data: FormData): Promise<FormState> {
   const publish = data.get("intent") === "publish";
   return run(async (postings) => {
-    await postings.editDraft(id, fieldsFromForm(data));
+    await postings.editDraft(id, fieldsFromForm(data), submitOptionsFromForm(data));
     if (publish) {
       await postings.publish(id);
       after(() => retryJobPostingAnnouncements());
@@ -60,7 +60,7 @@ export async function updateDraft(id: string, _: FormState, data: FormData): Pro
 }
 
 export async function updateOpen(id: string, _: FormState, data: FormData): Promise<FormState> {
-  return run((postings) => postings.editOpen(id, fieldsFromForm(data)));
+  return run((postings) => postings.editOpen(id, fieldsFromForm(data), submitOptionsFromForm(data)));
 }
 
 export async function closePosting(id: string): Promise<FormState> {

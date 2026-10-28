@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addRequiredDocument, deadlineInputValue, editFooter, statusActions, fieldsFromForm, joinRequirements, splitRequirements, templateFieldsFromForm, templateSummary } from "@/lib/job-posting-form";
+import { addRequiredDocument, deadlineInputValue, editFooter, statusActions, fieldsFromForm, joinRequirements, splitRequirements, submitOptionsFromForm, templateFieldsFromForm, templateSummary } from "@/lib/job-posting-form";
 
 const form = (entries: Record<string, string | string[]>) => {
   const data = new FormData();
@@ -173,5 +173,18 @@ describe("templateSummary", () => {
   it("shows a one-sided salary range", () => {
     expect(templateSummary({ ...base, salaryFrom: 15000 })).toContain("from ₱15,000");
     expect(templateSummary({ ...base, salaryTo: 20000 })).toContain("up to ₱20,000");
+  });
+});
+
+describe("submitOptionsFromForm", () => {
+  it("asks for no template when the checkbox is unticked, even if a name was typed", () => {
+    expect(submitOptionsFromForm(form({ templateName: "Base" }))).toEqual({});
+  });
+
+  it("carries the typed name when ticked, leaving validation to the backend", () => {
+    expect(submitOptionsFromForm(form({ saveAsTemplate: "on", templateName: " Base " }))).toEqual({
+      saveAsTemplate: { name: "Base" },
+    });
+    expect(submitOptionsFromForm(form({ saveAsTemplate: "on" }))).toEqual({ saveAsTemplate: { name: "" } });
   });
 });

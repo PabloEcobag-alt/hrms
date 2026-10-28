@@ -4,7 +4,6 @@ import { JobPostingForm } from "@/components/job-postings/job-posting-form";
 import { JobTemplateError } from "@/lib/job-postings";
 import { requireModule } from "@/lib/portal/staff";
 import { templatesForRequest } from "@/lib/portal/templates";
-import { saveAsTemplate } from "../../job-templates/actions";
 import { createDraft } from "../actions";
 
 export default async function Page() {
@@ -33,7 +32,6 @@ export default async function Page() {
       <JobPostingForm
         action={createDraft}
         isNew
-        saveTemplateAction={saveAsTemplate}
         templates={templates}
       />
     </div>

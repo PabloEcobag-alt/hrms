@@ -250,7 +250,7 @@ export function jobPostingsFor(sessionHandle: string | undefined, db: PostingDat
 
   return {
     publish: (id: string, options?: PostingSubmitOptions) => change(id, "draft", {}, "open", options),
-    editOpen: (id: string, fields: Partial<JobPostingFields>) => change(id, "open", fields, "open"),
+    editOpen: (id: string, fields: Partial<JobPostingFields>, options?: PostingSubmitOptions) => change(id, "open", fields, "open", options),
     close: (id: string) => change(id, "open", {}, "closed"),
     markFilled: (id: string) => change(id, "open", {}, "filled"),
     async closeExpired(): Promise<void> {

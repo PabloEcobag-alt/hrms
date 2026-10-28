@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -36,8 +37,6 @@ type Props = {
   readOnly?: boolean;
   /** A Job Template form: no deadline, and nothing about publishing. */
   template?: boolean;
-  /** Explicit "Save as template", submitted with the values currently typed. */
-  saveTemplateAction?: (data: FormData) => Promise<void>;
   /** Extra template-only action, e.g. delete. */
   templateActions?: React.ReactNode;
   /** Saved Job Templates offered in the Job title field of a new posting. */
@@ -138,12 +137,12 @@ export function JobPostingForm({
   published,
   readOnly,
   template,
-  saveTemplateAction,
   templateActions,
   templates,
 }: Props) {
   // Choosing a template refills the fields below; the deadline stays as it was.
   const [deadline, setDeadline] = useState(posting?.deadline ?? null);
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [picked, setPicked] = useState<{ template: JobTemplate; count: number }>();
   const [state, submit, pending] = useActionState(action ?? noAction, {});
   const errors = Object.fromEntries(
@@ -325,6 +324,27 @@ export function JobPostingForm({
             />
           </Field>
         </Section>
+        {!template && !readOnly && (
+          <Section
+            title="Template"
+            description="Optional. Keep these values, except the deadline, to start future Job Postings from."
+          >
+            <div className="flex items-center gap-sm">
+              <Checkbox
+                id="saveAsTemplate"
+                name="saveAsTemplate"
+                checked={saveAsTemplate}
+                onCheckedChange={(checked) => setSaveAsTemplate(checked === true)}
+              />
+              <Label htmlFor="saveAsTemplate">Save as template</Label>
+            </div>
+            {saveAsTemplate && (
+              <Field name="templateName" label="Template name" error={errors.templateName}>
+                <Input id="templateName" name="templateName" {...invalid("templateName")} required />
+              </Field>
+            )}
+          </Section>
+        )}
       </fieldset>
       <div className="sticky bottom-0 -mx-md flex items-center justify-between gap-sm border-t border-border bg-background px-md py-md sm:-mx-lg sm:px-lg">
         <p className="hidden text-body-sm text-muted-foreground sm:block">
@@ -344,15 +364,6 @@ export function JobPostingForm({
           <Button variant="outline" asChild>
             <Link href="/job-postings">{readOnly ? "Back" : "Cancel"}</Link>
           </Button>
-          {saveTemplateAction && !readOnly && (
-            <Button
-              type="submit"
-              variant="outline"
-              formAction={saveTemplateAction}
-            >
-              Save as template
-            </Button>
-          )}
           {!readOnly && (
             <Button
               type="submit"
