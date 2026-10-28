@@ -65,12 +65,12 @@ function PostingsTable({ postings }: { postings: JobPostingListItem[] }) {
     <Table className="table-fixed">
       <TableHeader>
         <TableRow className="border-border-subtle hover:bg-transparent">
-          <TableHead className={`${HEAD} w-[250px]`}>Job</TableHead>
-          <TableHead className={`${HEAD} w-[200px]`}>Location</TableHead>
-          <TableHead className={`${HEAD} w-[110px]`}>Type</TableHead>
-          <TableHead className={`${HEAD} w-[110px]`}>Applicants</TableHead>
-          <TableHead className={`${HEAD} w-[120px]`}>Posted</TableHead>
-          <TableHead className={`${HEAD} w-[120px]`}>Deadline</TableHead>
+          <TableHead className={`${HEAD} w-[26%]`}>Job</TableHead>
+          <TableHead className={`${HEAD} w-[20%]`}>Location</TableHead>
+          <TableHead className={`${HEAD} w-[10%]`}>Type</TableHead>
+          <TableHead className={`${HEAD} w-[10%]`}>Applicants</TableHead>
+          <TableHead className={`${HEAD} w-[11%]`}>Posted</TableHead>
+          <TableHead className={`${HEAD} w-[11%]`}>Deadline</TableHead>
           <TableHead className={HEAD}>Status</TableHead>
         </TableRow>
       </TableHeader>
