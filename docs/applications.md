@@ -139,4 +139,14 @@ Job Posting that is not Open or an email (case-insensitive) already applied to t
 whether Careers-submitted or HR-added.
 
 HR-added ids are negative (counting down from -1) so they never collide with Careers ids.
-Profile, Stage and note operations reject them as invalid until those are built for HR-added rows.
+
+### Working an HR-added Application
+
+`readProfile`, `moveStage`, `scheduleInterview`, `recordInterviewResult` and `addNote` accept HR-added
+ids and behave as for any Application. The profile returns the added name, email, mobile, address,
+expected salary and availability, and every Job Posting Required Document as `Requested` (HR-added
+Applications have no submitted documents). The Stage lives in `hrms_manual_applications.status`;
+history, activity, interviews and notes use the shared HRMS tables. No Applicant notification is
+queued, since there is no Careers user. Document download still returns not-found for these ids.
+Migration `0018-manual-application-workflow.sql` adds the status column and drops the foreign keys
+from those HRMS tables to Careers' `applications` so they can hold HR-added ids. Run `npm run db:migrate`.
