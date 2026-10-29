@@ -13,13 +13,19 @@ export type ApplicationListItem = {
   stage: ApplicationStage;
   nextStep: string;
 };
+export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
+  mobile: string | null;
+  address: string | null;
+  expectedSalary: number | null;
+  availableFrom: string | null;
+};
 export type ApplicationTab = "All" | Exclude<ApplicationStage, "Withdrawn">;
 export type ApplicationFilters = { jobPostingId?: string; stage?: ApplicationTab; search?: string };
 export type ApplicationJobPostingOption = { id: string; title: string; applicationCount: number };
 export type ApplicationPage = { jobPostingOptions: ApplicationJobPostingOption[]; newThisWeek: number; stageCounts: Record<ApplicationTab, number>; rows: ApplicationListItem[]; total: number; page: number; pageSize: 25 };
 
 export class ApplicationError extends Error {
-  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "validation") {
+  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "validation" | "not-found") {
     super(`Application: ${reason}`);
   }
 }
@@ -92,6 +98,29 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
   }
 
   return {
+    async readProfile(id: number): Promise<ApplicationProfile> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
+      // Careers snapshots use phone/location. Older snapshots omit email and the
+      // optional salary/availability fields; only email has a legacy identity fallback.
+      const { rows } = await db.query<ApplicationProfile>(`
+        SELECT a.id, a.profile_snapshot->>'fullName' AS "applicantName",
+          COALESCE(a.profile_snapshot->>'email', p.email) AS "applicantEmail",
+          a.profile_snapshot->>'phone' AS mobile,
+          a.profile_snapshot->>'location' AS address,
+          (a.profile_snapshot->>'expectedSalary')::double precision AS "expectedSalary",
+          a.profile_snapshot->>'availableFrom' AS "availableFrom",
+          a.job_posting_id AS "jobPostingId", j.title AS "jobPostingTitle", j.location,
+          a.created_at AS "appliedAt",
+          CASE WHEN a.status = 'Received' THEN 'New' ELSE a.status END AS stage
+        FROM public.applications a
+        LEFT JOIN public.applicant_profiles p ON p.applicant_id = a.applicant_id
+        JOIN public.job_postings j ON j.id = a.job_posting_id
+        WHERE a.id = $1`, [id]);
+      if (!rows[0]) throw new ApplicationError("not-found");
+      return rows[0];
+    },
     list: (filters: ApplicationFilters & { page?: number } = {}) => read(filters),
     async exportCsv({ jobPostingId, stage, search }: ApplicationFilters = {}): Promise<string> {
       const { rows } = await read({ jobPostingId, stage, search }, false);
