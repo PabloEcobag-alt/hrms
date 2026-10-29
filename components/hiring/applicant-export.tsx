@@ -19,8 +19,10 @@ export function ApplicantExport({ stage, search, job }: { stage: ApplicationTab;
       const link = document.createElement("a");
       link.href = url;
       link.download = exportFileName(new Date());
+      document.body.append(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       setState("idle");
     } catch {
       setState("failed");
@@ -30,7 +32,7 @@ export function ApplicantExport({ stage, search, job }: { stage: ApplicationTab;
   return (
     <div className="flex flex-col items-end gap-xs">
       <Button variant="outline" className="h-auto rounded-lg px-[14px] py-[9px] shadow-none" disabled={state === "busy"} onClick={download}>
-        <Download /> Export
+        <Download /> {state === "busy" ? "Exporting…" : "Export"}
       </Button>
       {state === "failed" && (
         <p role="alert" className="text-xs text-destructive">The export could not be downloaded. Please try again.</p>
