@@ -199,3 +199,46 @@ it("offers only Open Job Postings with every Application counted independently o
   expect((await applicationsFor(handle, db).list()).total).toBe(6);
   expect((await applicationsFor(handle, db).list({ jobPostingId: "posting-5" })).rows.map((row) => row.stage)).toEqual(["Hired"]);
 });
+
+it("exports every matching Application in list order, beyond the first page", async () => {
+  for (let i = 0; i < 29; i++) await seed(i, i === 28 ? "Screening" : i === 27 ? "Withdrawn" : "Received");
+  await db.query("UPDATE applications SET job_posting_id = 'posting-0' WHERE id > 1");
+  await seed(30);
+  const applications = applicationsFor(handle, db);
+  const filters = { jobPostingId: "posting-0", stage: "New" as const, search: "APPLICANT" };
+  const csv = await applications.exportCsv(filters);
+  const lines = csv.split("\r\n");
+  expect(lines[0]).toBe("name,email,Job Posting,location,applied date,Stage,Next step");
+  expect(lines).toHaveLength(29);
+  expect(lines[1]).toBe("Applicant 26,person26@example.test,Cashier,Manila,2026-10-01T08:00:00.000Z,New,Review application");
+  const rows = [...(await applications.list(filters)).rows, ...(await applications.list({ ...filters, page: 2 })).rows];
+  expect(lines.slice(1, -1).map((line) => line.split(",")[0])).toEqual(rows.map((row) => row.applicantName));
+});
+
+it("quotes CSV commas, quotes and line breaks and returns headers for an empty view", async () => {
+  await seed(1, "Withdrawn", "filled");
+  await db.query("UPDATE applications SET profile_snapshot = $1::jsonb", [JSON.stringify({ fullName: 'Ada, "AJ"\r\nOkafor' })]);
+  await db.query("UPDATE job_postings SET title = $1, location = $2", ['Cashier "Lead"', 'Manila\nOffice']);
+  const applications = applicationsFor(handle, db);
+  expect(await applications.exportCsv()).toBe('name,email,Job Posting,location,applied date,Stage,Next step\r\n"Ada, ""AJ""\r\nOkafor",person1@example.test,"Cashier ""Lead""","Manila\nOffice",2026-10-01T08:00:00.000Z,Withdrawn,Withdrawn by applicant\r\n');
+  expect(await applications.exportCsv({ search: "missing" })).toBe("name,email,Job Posting,location,applied date,Stage,Next step\r\n");
+});
+
+it.each(["denied", "invalid", "unavailable"] as const)("CSV export fails closed on %s before reading data", async (reason) => {
+  const restrictedHandle = reason === "denied" ? portal.signIn(staff, ["Attendance"]) : reason === "invalid" ? undefined : handle;
+  portal.unavailable = reason === "unavailable";
+  await db.close();
+  await expect(applicationsFor(restrictedHandle, db).exportCsv()).rejects.toMatchObject({ reason });
+});
+
+it("rechecks Module access for each export", async () => {
+  const applications = applicationsFor(handle, db);
+  await applications.exportCsv();
+  portal.endSession(handle);
+  await expect(applications.exportCsv()).rejects.toMatchObject({ reason: "invalid" });
+});
+
+it.each([{ stage: "Withdrawn" }, { search: null }, { jobPostingId: " " }])("validates CSV filters %j", async (filters) => {
+  // @ts-expect-error intentionally invalid boundary input
+  await expect(applicationsFor(handle, db).exportCsv(filters)).rejects.toMatchObject({ reason: "validation" });
+});
