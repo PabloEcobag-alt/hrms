@@ -17,6 +17,7 @@ export type ApplicationListItem = {
 type SubmittedDocument = { id: number; name: string; size: number; contentType: string; requiredFor: string };
 export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
   | { requiredFor: string; status: "Requested" };
+export type ApplicationNote = { id: number; text: string; authorName: string; createdAt: Date };
 export type ApplicationActivity = {
   id: number;
   fromStage: ApplicationStage;
@@ -27,6 +28,7 @@ export type ApplicationActivity = {
 };
 export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
   documents: ApplicationDocument[];
+  notes: ApplicationNote[];
   stageDates: Partial<Record<ApplicationStage, Date>>;
   activity: ApplicationActivity[];
   mobile: string | null;
@@ -113,6 +115,17 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
   }
 
   return {
+    async addNote(id: number, text: string): Promise<void> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+        || typeof text !== "string" || text.trim() === "") throw new ApplicationError("validation");
+      const { rows } = await db.query<{ id: number }>(`
+        INSERT INTO public.hrms_application_notes (application_id, text, author_name)
+        SELECT id, $2, $3 FROM public.applications WHERE id = $1
+        RETURNING id`, [id, text.trim(), access.staff.name]);
+      if (!rows[0]) throw new ApplicationError("not-found");
+    },
     /** The caller supplies the Stage they reviewed, so stale actions cannot advance it twice. */
     async moveStage(id: number, fromStage: ApplicationStage, toStage: ApplicationStage, reason?: string): Promise<void> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
@@ -185,7 +198,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
       // Careers snapshots use phone/location. Older snapshots omit email and the
       // optional salary/availability fields; only email has a legacy identity fallback.
-      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "stageDates" | "activity"> & { stage_dates: Partial<Record<ApplicationStage, string>>; activity: (Omit<ApplicationActivity, "occurredAt"> & { occurredAt: string })[]; documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
+      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "notes" | "stageDates" | "activity"> & { stage_dates: Partial<Record<ApplicationStage, string>>; activity: (Omit<ApplicationActivity, "occurredAt"> & { occurredAt: string })[]; documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
         SELECT a.documents_snapshot, j.required_documents, a.id,
           jsonb_build_object('New', a.created_at) || COALESCE((
             SELECT jsonb_object_agg(h.stage, h.reached_at)
@@ -210,7 +223,11 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         WHERE a.id = $1`, [id]);
       if (!rows[0]) throw new ApplicationError("not-found");
       const { documents_snapshot, required_documents, stage_dates, activity, ...profile } = rows[0];
-      return { ...profile,
+      const { rows: notes } = await db.query<ApplicationNote>(`
+        SELECT id, text, author_name AS "authorName", created_at AS "createdAt"
+        FROM public.hrms_application_notes WHERE application_id = $1
+        ORDER BY created_at DESC, id DESC`, [id]);
+      return { ...profile, notes,
         stageDates: Object.fromEntries(Object.entries(stage_dates).map(([stage, date]) => [stage, new Date(date)])),
         activity: activity.map((entry) => ({ ...entry, occurredAt: new Date(entry.occurredAt) })),
         documents: [
