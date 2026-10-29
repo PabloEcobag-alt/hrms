@@ -39,10 +39,10 @@ all posting statuses and Withdrawn Applications and maps stored `Received` to
 `New`. It changes no Careers table or record. Run it through `npm run db:migrate`
 with the existing direct database connection before using the module.
 
-Next step labels are fixed per Stage. Interview currently reads `Awaiting result`;
-upcoming interview dates are added by #143. The filters and counts reuse the
-existing read view, so no additional migration is required. CSV,
-profile reads and mutations belong to subsequent tickets under #133.
+Next step labels are fixed per Stage except Interview, which shows
+`Interview · Nov 3, 2026, 9:00 AM` for the next upcoming interview without a result,
+using Manila time and the database clock. Without one it reads `Awaiting result`.
+CSV exports use the same labels and include every matching row.
 
 ## Application documents
 
@@ -76,9 +76,16 @@ a missing Application returns `not-found`. Every call rechecks Module access.
 
 Scheduling from Screening uses the same guarded status write as `moveStage` to
 reach Interview. Scheduling from Interview adds another interview without changing
-the tracker date. The interview, optional Stage history, and activity with the
+the recorded Stage history. The interview, optional Stage history, and activity with the
 acting Staff name commit atomically. `readProfile` returns `interviews` ordered by
-start time then id, and scheduling activity includes `interviewId`.
+start time descending then id descending, and scheduling activity includes `interviewId`.
+Each interview includes its date/time, end time, type, interviewer, location,
+nullable `score` (1–5), and nullable `result` (`Passed` or `Not passed`). These
+fields are private to authorised Staff. Migration `0015-application-interview-results.sql`
+adds the score and result columns; recording outcomes is handled by #145.
+The profile tracker's `stageDates.Interview` uses the next upcoming interview
+without a result, falling back to the latest interview date/time. When no
+interviews exist, the recorded Stage date remains the fallback.
 Run migration `0013-application-interviews.sql` before using this boundary.
 
 ## Private Application notes
