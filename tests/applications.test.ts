@@ -252,7 +252,7 @@ it("reads Application profile details from the submitted snapshot rather than th
     location: "Quezon City", expectedSalary: 25000, availableFrom: "2026-11-01",
   }), id]);
   expect(await applicationsFor(handle, db).readProfile(id)).toEqual({
-    id, documents: [], applicantName: "Submitted Name", applicantEmail: "submitted@example.test",
+    id, documents: [], notes: [], applicantName: "Submitted Name", applicantEmail: "submitted@example.test",
     mobile: "09171234567", address: "Quezon City", expectedSalary: 25000, availableFrom: "2026-11-01",
     jobPostingId: "posting-1", jobPostingTitle: "Cashier", location: "Manila",
     stage: "Screening", appliedAt: new Date("2026-10-01T08:00:00Z"),
@@ -352,4 +352,63 @@ it.each(["denied", "invalid", "unavailable"] as const)("document download fails 
 it.each([0, -1, 1.5, NaN, Infinity, 2_147_483_648])("validates download ids %s", async (id) => {
   await expect(applicationsFor(handle, db).downloadDocument(id, 7)).rejects.toMatchObject({ reason: "validation" });
   await expect(applicationsFor(handle, db).downloadDocument(1, id)).rejects.toMatchObject({ reason: "validation" });
+});
+
+
+it("stores private notes with the acting Staff name and time in the Application profile", async () => {
+  const id = await seed(1);
+  const otherId = await seed(2);
+  const applications = applicationsFor(handle, db);
+  const before = Date.now();
+  await applications.addNote(id, "Called applicant about availability.");
+  const notes = (await applications.readProfile(id)).notes;
+  expect(notes).toEqual([{ id: expect.any(Number), text: "Called applicant about availability.", authorName: "Ada Okafor", createdAt: expect.any(Date) }]);
+  expect(notes[0].createdAt.getTime()).toBeGreaterThanOrEqual(before);
+  expect(notes[0].createdAt.getTime()).toBeLessThanOrEqual(Date.now());
+  expect((await applications.readProfile(otherId)).notes).toEqual([]);
+});
+
+it("returns notes newest first with stable ties and each acting author's name", async () => {
+  const id = await seed(1);
+  const applications = applicationsFor(handle, db);
+  await applications.addNote(id, "First");
+  const secondHandle = portal.signIn({ ...staff, name: "Ben Santos", username: "ben" }, ["Recruitment and Hiring"]);
+  await applicationsFor(secondHandle, db).addNote(id, "Second");
+  expect((await applications.readProfile(id)).notes.map(({ text, authorName }) => [text, authorName])).toEqual([
+    ["Second", "Ben Santos"], ["First", "Ada Okafor"],
+  ]);
+  // Force a timestamp tie to exercise deterministic ordering through the same seam.
+  await db.exec("UPDATE hrms_application_notes SET created_at = '2026-10-01T08:00:00Z'");
+  expect((await applications.readProfile(id)).notes.map(({ text }) => text)).toEqual(["Second", "First"]);
+});
+
+it.each(["", " ", "\t\n", null, 42])("refuses blank or non-text notes %j without saving them", async (text) => {
+  const id = await seed(1);
+  // @ts-expect-error intentionally invalid boundary input
+  await expect(applicationsFor(handle, db).addNote(id, text)).rejects.toMatchObject({ reason: "validation" });
+  expect((await applicationsFor(handle, db).readProfile(id)).notes).toEqual([]);
+});
+
+it.each([0, -1, 1.5, NaN, Infinity, 2_147_483_648])("validates the note's Application id %s", async (id) => {
+  await expect(applicationsFor(handle, db).addNote(id, "Note")).rejects.toMatchObject({ reason: "validation" });
+});
+
+it("refuses notes for an unknown Application", async () => {
+  await expect(applicationsFor(handle, db).addNote(123, "Note")).rejects.toMatchObject({ reason: "not-found" });
+});
+
+it.each(["denied", "invalid", "unavailable"] as const)("note writes fail closed on %s before querying", async (reason) => {
+  const restricted = reason === "denied" ? portal.signIn(staff, ["Attendance"]) : reason === "invalid" ? undefined : handle;
+  portal.unavailable = reason === "unavailable";
+  await db.close();
+  await expect(applicationsFor(restricted, db).addNote(1, "Note")).rejects.toMatchObject({ reason });
+});
+
+it("rechecks Module access for every note write and profile read", async () => {
+  const id = await seed(1);
+  const applications = applicationsFor(handle, db);
+  await applications.addNote(id, "Private note");
+  portal.endSession(handle);
+  await expect(applications.addNote(id, "Another note")).rejects.toMatchObject({ reason: "invalid" });
+  await expect(applications.readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
 });

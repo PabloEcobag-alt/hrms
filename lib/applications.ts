@@ -17,8 +17,10 @@ export type ApplicationListItem = {
 type SubmittedDocument = { id: number; name: string; size: number; contentType: string; requiredFor: string };
 export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
   | { requiredFor: string; status: "Requested" };
+export type ApplicationNote = { id: number; text: string; authorName: string; createdAt: Date };
 export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
   documents: ApplicationDocument[];
+  notes: ApplicationNote[];
   mobile: string | null;
   address: string | null;
   expectedSalary: number | null;
@@ -103,6 +105,17 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
   }
 
   return {
+    async addNote(id: number, text: string): Promise<void> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+        || typeof text !== "string" || text.trim() === "") throw new ApplicationError("validation");
+      const { rows } = await db.query<{ id: number }>(`
+        INSERT INTO public.hrms_application_notes (application_id, text, author_name)
+        SELECT id, $2, $3 FROM public.applications WHERE id = $1
+        RETURNING id`, [id, text.trim(), access.staff.name]);
+      if (!rows[0]) throw new ApplicationError("not-found");
+    },
     async downloadDocument(id: number, documentId: number): Promise<Response> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
@@ -142,7 +155,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
       // Careers snapshots use phone/location. Older snapshots omit email and the
       // optional salary/availability fields; only email has a legacy identity fallback.
-      const { rows } = await db.query<Omit<ApplicationProfile, "documents"> & { documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
+      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "notes"> & { documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
         SELECT a.documents_snapshot, j.required_documents, a.id, a.profile_snapshot->>'fullName' AS "applicantName",
           COALESCE(a.profile_snapshot->>'email', p.email) AS "applicantEmail",
           a.profile_snapshot->>'phone' AS mobile,
@@ -158,7 +171,11 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         WHERE a.id = $1`, [id]);
       if (!rows[0]) throw new ApplicationError("not-found");
       const { documents_snapshot, required_documents, ...profile } = rows[0];
-      return { ...profile, documents: [
+      const { rows: notes } = await db.query<ApplicationNote>(`
+        SELECT id, text, author_name AS "authorName", created_at AS "createdAt"
+        FROM public.hrms_application_notes WHERE application_id = $1
+        ORDER BY created_at DESC, id DESC`, [id]);
+      return { ...profile, notes, documents: [
         ...documents_snapshot.map((document): ApplicationDocument => ({ ...document, status: "Submitted",
           downloadUrl: `/api/applications/${id}/documents/${document.id}` })),
         ...required_documents.filter((required) => !documents_snapshot.some((document) => document.requiredFor === required))

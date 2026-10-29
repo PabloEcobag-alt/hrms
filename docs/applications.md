@@ -64,3 +64,20 @@ files return not-found. Storage failures return unavailable.
 
 HRMS must have access to the **same private Blob store as Careers**, via its
 Vercel store connection or `BLOB_READ_WRITE_TOKEN`. No database migration is needed.
+
+## Private Application notes
+
+`applicationsFor(sessionHandle, db).addNote(applicationId, text)` saves a private
+note with the acting Staff member's Portal name and a database timestamp. Text
+is trimmed; blank or non-string text and invalid Application ids return
+validation. An unknown Application returns not-found. The caller cannot supply
+an author or timestamp. Each write rechecks the Recruitment and Hiring Module.
+
+`readProfile(id).notes` returns `{ id, text, authorName, createdAt }` entries,
+newest first by timestamp and then id for stable ties. `createdAt` is a Date.
+Applications with no notes return an empty array. The existing profile access
+check protects notes; lists and CSV exports do not contain private notes.
+
+Run `npm run db:migrate` before deploying this module. Migration
+`0012-application-notes.sql` creates the HRMS-owned `hrms_application_notes`
+table and its Application/time index without changing Careers tables.
