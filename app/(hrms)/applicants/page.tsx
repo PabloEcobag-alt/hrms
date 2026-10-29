@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { AddApplicant } from "@/components/hiring/add-applicant";
 import { ApplicantExport } from "@/components/hiring/applicant-export";
 import { ApplicantJobFilter } from "@/components/hiring/applicant-job-filter";
 import { ApplicantSearch } from "@/components/hiring/applicant-search";
@@ -107,6 +108,7 @@ async function Listing({ page, stage, search, job }: { page: number; stage: Appl
     <>
       <PageHeader title={TITLE} subtitle={formatSubtitle(stageCounts.All, newThisWeek)}>
         <ApplicantExport stage={stage} search={search} job={job} />
+        <AddApplicant jobs={jobPostingOptions} />
       </PageHeader>
       <nav aria-label="Stage" className="flex flex-wrap gap-xs">
         {STAGE_TABS.map((tab) => (
