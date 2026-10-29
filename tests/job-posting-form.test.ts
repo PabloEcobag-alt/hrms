@@ -123,6 +123,14 @@ describe("job template form", () => {
     expect(templateFieldsFromForm(form({ openings: "4" })).openings).toBe(4);
     expect(templateFieldsFromForm(form({ salaryFrom: "100", salaryTo: "200" }))).toMatchObject({ salaryFrom: 100, salaryTo: 200 });
   });
+
+  it("keeps Responsibilities and Benefits as trimmed lists, and clears them when emptied", () => {
+    expect(templateFieldsFromForm(form({ responsibilities: "Open the till\n\n Count cash ", benefits: "Free meals" }))).toMatchObject({
+      responsibilities: ["Open the till", "Count cash"],
+      benefits: ["Free meals"],
+    });
+    expect(templateFieldsFromForm(form({ responsibilities: "", benefits: "  " }))).toMatchObject({ responsibilities: [], benefits: [] });
+  });
 });
 
 describe("addRequiredDocument", () => {
