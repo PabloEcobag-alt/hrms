@@ -10,6 +10,7 @@ import { STAGE_BADGE, detailOrDash, formatAppliedFor, formatAvailableFrom, forma
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
 import { ApplicationActivity } from "@/components/hiring/application-activity";
+import { ApplicationNotes } from "@/components/hiring/application-notes";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import { ProfileSkeleton } from "./profile-skeleton";
 
@@ -87,7 +88,7 @@ async function Profile({ id }: { id: number }) {
         badge={<Badge variant={STAGE_BADGE[profile.stage]}>{profile.stage}</Badge>}
       />
       <Tracker profile={profile} />
-      <ProfileColumns main={<ApplicationDetails profile={profile} />} aside={<ApplicationActivity profile={profile} />} />
+      <ProfileColumns main={<ApplicationDetails profile={profile} />} aside={<><ApplicationActivity profile={profile} /><ApplicationNotes applicationId={id} notes={profile.notes} /></>} />
     </>
   );
 }
