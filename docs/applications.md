@@ -123,3 +123,20 @@ HRMS-owned tables and is returned only through the authorised Staff profile;
 lists and CSV exports omit scores and results. Run `npm run db:migrate` before
 using this write: `0016-interview-result-activity.sql` permits activity after Hired,
 Rejected or Withdrawn without changing workflow transitions or the Stage.
+
+## Adding an applicant by hand
+
+`addApplicant({ fullName, email, mobile, address, jobPostingId, expectedSalary, availableFrom })`
+records a walk-in or referral on an Open Job Posting and returns the new id. `availableFrom` is
+`YYYY-MM-DD`; the applied date is the database clock's now; the Stage is New. Rows live in
+`hrms_manual_applications` (migration `0017-manual-applications.sql`), never in a Careers table,
+and are listed through the `hrms_all_applications` view, so filters, tabs, search, counts and CSV
+export treat them like any other Application. The "added by HR" marker is stored (`added_by_name`)
+but not exposed.
+
+Errors: `validation` for bad input, `not-found` for an unknown Job Posting, `conflict` for a
+Job Posting that is not Open or an email (case-insensitive) already applied to that posting,
+whether Careers-submitted or HR-added.
+
+HR-added ids are negative (counting down from -1) so they never collide with Careers ids.
+Profile, Stage and note operations reject them as invalid until those are built for HR-added rows.

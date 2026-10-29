@@ -731,3 +731,60 @@ it.each(["Hired", "Rejected", "Withdrawn"])("records a past interview result aft
   await applications.recordInterviewResult(id, interviewId, { score: 3, result: "Not passed" });
   expect(await applications.readProfile(id)).toMatchObject({ stage, interviews: [{ score: 3, result: "Not passed" }] });
 });
+
+const manual = { fullName: " Walk In ", email: "walk@example.test", mobile: "0917", address: "Manila", jobPostingId: "posting-1", expectedSalary: 25000, availableFrom: "2026-11-15" };
+
+it("adds an applicant by hand at New, listed, searchable, counted and exported with Careers rows", async () => {
+  await seed(1);
+  const id = await applicationsFor(handle, db).addApplicant(manual);
+  expect(id).toBeLessThan(0);
+  const applications = applicationsFor(handle, db);
+  const list = await applications.list();
+  expect(list).toMatchObject({ total: 2, stageCounts: { All: 2, New: 2 }, newThisWeek: 1,
+    jobPostingOptions: [{ id: "posting-1", applicationCount: 2 }],
+    rows: [{ id, applicantName: "Walk In", applicantEmail: "walk@example.test", jobPostingTitle: "Cashier", stage: "New", nextStep: "Review application" }, { applicantName: "Applicant 1" }] });
+  expect((await applications.list({ search: "WALK", jobPostingId: "posting-1", stage: "New" })).rows).toHaveLength(1);
+  expect(await applications.exportCsv({ search: "walk" })).toContain("Walk In,walk@example.test,Cashier");
+  expect(Math.abs(list.rows[0].appliedAt.getTime() - Date.now())).toBeLessThan(60_000);
+  expect((await db.query("SELECT * FROM applications")).rows).toHaveLength(1);
+});
+
+it("refuses a Job Posting that is not Open, or unknown", async () => {
+  await seed(1, "Received", "closed");
+  await expect(applicationsFor(handle, db).addApplicant(manual)).rejects.toMatchObject({ reason: "conflict" });
+  await expect(applicationsFor(handle, db).addApplicant({ ...manual, jobPostingId: "nope" })).rejects.toMatchObject({ reason: "not-found" });
+  expect((await applicationsFor(handle, db).list()).total).toBe(1);
+});
+
+it("refuses the same email for the same Job Posting from either source, case-insensitively", async () => {
+  await seed(1);
+  const applications = applicationsFor(handle, db);
+  await expect(applications.addApplicant({ ...manual, email: "PERSON1@example.test" })).rejects.toMatchObject({ reason: "conflict" });
+  await applications.addApplicant(manual);
+  await expect(applications.addApplicant({ ...manual, email: "Walk@Example.test" })).rejects.toMatchObject({ reason: "conflict" });
+  await seed(2);
+  await expect(applications.addApplicant({ ...manual, jobPostingId: "posting-2" })).resolves.toBeLessThan(0);
+  expect((await applications.list()).total).toBe(4);
+});
+
+it("allows only one of two concurrent identical adds", async () => {
+  await seed(1);
+  const results = await Promise.allSettled([applicationsFor(handle, db).addApplicant(manual), applicationsFor(handle, db).addApplicant(manual)]);
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  expect((await applicationsFor(handle, db).list()).total).toBe(2);
+});
+
+it.each([
+  { fullName: " " }, { email: "not-an-email" }, { mobile: "" }, { address: "  " }, { jobPostingId: "" },
+  { expectedSalary: -1 }, { expectedSalary: NaN }, { expectedSalary: "5" }, { availableFrom: "2026-02-30" }, { availableFrom: "soon" },
+])("validates manual applicant input %j", async (override) => {
+  await seed(1);
+  await expect(applicationsFor(handle, db).addApplicant({ ...manual, ...override } as never)).rejects.toMatchObject({ reason: "validation" });
+});
+
+it.each(["denied", "invalid", "unavailable"] as const)("adding an applicant fails closed on %s", async (reason) => {
+  const restricted = reason === "denied" ? portal.signIn(staff, ["Attendance"]) : reason === "invalid" ? undefined : handle;
+  portal.unavailable = reason === "unavailable";
+  await db.close();
+  await expect(applicationsFor(restricted, db).addApplicant(manual)).rejects.toMatchObject({ reason });
+});
