@@ -1,4 +1,4 @@
-import type { ApplicationStage } from "./applications";
+import type { ApplicationStage, ApplicationTab } from "./applications";
 
 export const STAGE_BADGE = {
   New: "info",
@@ -34,3 +34,24 @@ export function formatRange(page: number, pageSize: number, total: number, rowCo
 }
 
 export const pageCount = (total: number, pageSize: number) => Math.max(1, Math.ceil(total / pageSize));
+
+export const STAGE_TABS: ApplicationTab[] = ["All", "New", "Screening", "Interview", "Offer", "Hired", "Rejected"];
+
+/** An unknown or missing Stage in the URL means the All tab. */
+export const stageFromParam = (value: string | undefined): ApplicationTab => STAGE_TABS.find((tab) => tab === value) ?? "All";
+
+/** Blank search in the URL means no search. */
+export const searchFromParam = (value: string | undefined) => value?.trim() || undefined;
+
+/** The list URL for a view; defaults are left out so the plain list keeps its plain link. */
+export function applicantsHref({ stage, search, page }: { stage?: ApplicationTab; search?: string; page?: number }) {
+  const params = new URLSearchParams();
+  if (stage && stage !== "All") params.set("stage", stage);
+  if (search) params.set("q", search);
+  if (page && page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/applicants?${query}` : "/applicants";
+}
+
+/** "Showing 132 applicants": everything the current Stage and search match, across pages. */
+export const formatShowing = (total: number) => `Showing ${total} ${total === 1 ? "applicant" : "applicants"}`;
