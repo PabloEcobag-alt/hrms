@@ -1,13 +1,29 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
-import { Download, Printer, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Download, FileX, Printer, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { fileTypeLabel, formatFileSize, formatUploaded } from "@/lib/application-view";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
-export function canView(contentType: string) {
+/** The browser shows a PDF and an image itself; anything else (Word included) gets a "can't preview" state. */
+export function canPreview(contentType: string) {
   return contentType === "application/pdf" || contentType.startsWith("image/");
+}
+
+/** Asks the Document route once whether it can serve the file. A good file answers with a redirect to file-storage (opaque to us); a missing one answers with an error. */
+function useUnreachable(url: string, enabled: boolean) {
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState<{ attempt: number; unreachable: boolean } | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const controller = new AbortController();
+    fetch(url, { redirect: "manual", signal: controller.signal })
+      .then((response) => { controller.abort(); setFailed({ attempt, unreachable: !(response.type === "opaqueredirect" || response.ok) }); })
+      .catch(() => { if (!controller.signal.aborted) setFailed({ attempt, unreachable: true }); });
+    return () => controller.abort();
+  }, [url, attempt, enabled]);
+  return { unreachable: failed?.attempt === attempt && failed.unreachable, retry: () => setAttempt((n) => n + 1) };
 }
 
 const ICON_BUTTON = "cursor-pointer rounded-md p-[6px] text-zinc-300 hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-ring";
@@ -38,9 +54,23 @@ function FileDetails({ contentType, size, requiredFor, uploadedAt, applicantName
   );
 }
 
-/** Wraps a submitted Document's row text as the button that opens it full-screen. A PDF is an iframe and an image an img, so paging, zoom and print come from the browser. */
-export function DocumentViewer({ name, contentType, url, applicantName, size, requiredFor, uploadedAt, children }: { name: string; contentType: string; url: string; applicantName: string; size: number; requiredFor: string; uploadedAt: Date | null; children: ReactNode }) {
+function Notice({ title, detail, action }: { title: string; detail: string; action?: ReactNode }) {
+  return (
+    <div role="status" className="flex max-w-[360px] flex-col items-center gap-[12px] rounded-xl bg-[#2a2533] px-[32px] py-[40px] text-center text-white">
+      <FileX aria-hidden className="size-[32px] text-zinc-300" />
+      <p className="text-[15px] font-semibold">{title}</p>
+      <p className="text-[13px] text-zinc-300">{detail}</p>
+      {action}
+    </div>
+  );
+}
+
+function ViewerBody({ name, contentType, url, applicantName, size, requiredFor, uploadedAt }: Omit<Parameters<typeof DocumentViewer>[0], "children">) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const previewable = canPreview(contentType);
+  const probe = useUnreachable(url, previewable);
+  const [imageBroken, setImageBroken] = useState(false);
+  const unreachable = probe.unreachable || imageBroken;
   const print = () => {
     try {
       if (!frame.current?.contentWindow) throw new Error("nothing to print in place");
@@ -50,6 +80,37 @@ export function DocumentViewer({ name, contentType, url, applicantName, size, re
       window.open(url, "_blank");
     }
   };
+  const retry = () => { setImageBroken(false); probe.retry(); };
+  return (
+    <>
+      <div className="flex items-center gap-[12px] px-[20px] py-[14px] text-white">
+        <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+          <DialogTitle className="truncate text-[15px] font-semibold leading-[normal] tracking-normal">{name}</DialogTitle>
+          <DialogDescription className="truncate text-xs text-zinc-300">{applicantName}</DialogDescription>
+        </div>
+        {previewable && !unreachable && <button type="button" aria-label="Print" onClick={print} className={ICON_BUTTON}><Printer className="size-[18px]" /></button>}
+        <a href={url} download aria-label={`Download ${name}`} className={ICON_BUTTON}><Download className="size-[18px]" /></a>
+        <DialogClose aria-label="Close" className={ICON_BUTTON}><X className="size-[18px]" /></DialogClose>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-[20px] overflow-y-auto px-[20px] pb-[20px] lg:flex-row lg:overflow-visible">
+        <div className="flex min-h-[60vh] min-w-0 flex-1 items-center justify-center lg:min-h-0">
+          {!previewable
+            ? <Notice title="Can't preview this file" detail="Word documents can't be shown here. Download it to open it." />
+            : unreachable
+              ? <Notice title="Can't open this file right now" detail="Try again in a moment, or download it instead." action={<button type="button" onClick={retry} className="cursor-pointer rounded-lg bg-[#5b2a86] px-[14px] py-[9px] text-sm font-medium text-white focus-visible:ring-2 focus-visible:ring-ring">Try again</button>} />
+              : contentType === "application/pdf"
+                ? <iframe ref={frame} src={url} title={name} className="size-full rounded-lg bg-white" />
+                // eslint-disable-next-line @next/next/no-img-element -- the signed address is not an optimisable asset
+                : <img src={url} alt={name} onError={() => setImageBroken(true)} className="max-h-full max-w-full rounded-lg object-contain" />}
+        </div>
+        <FileDetails contentType={contentType} size={size} requiredFor={requiredFor} uploadedAt={uploadedAt} applicantName={applicantName} />
+      </div>
+    </>
+  );
+}
+
+/** Wraps a submitted Document's row text as the button that opens it full-screen. A PDF is an iframe and an image an img, so paging, zoom and print come from the browser. */
+export function DocumentViewer({ name, contentType, url, applicantName, size, requiredFor, uploadedAt, children }: { name: string; contentType: string; url: string; applicantName: string; size: number; requiredFor: string; uploadedAt: Date | null; children: ReactNode }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -60,24 +121,7 @@ export function DocumentViewer({ name, contentType, url, applicantName, size, re
         overlayClassName="bg-[rgba(18,13,26,0.92)]"
         className="inset-0 flex h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-transparent !p-0 shadow-none sm:max-w-none sm:rounded-none sm:!p-0 md:max-w-none lg:max-w-none"
       >
-        <div className="flex items-center gap-[12px] px-[20px] py-[14px] text-white">
-          <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <DialogTitle className="truncate text-[15px] font-semibold leading-[normal] tracking-normal">{name}</DialogTitle>
-            <DialogDescription className="truncate text-xs text-zinc-300">{applicantName}</DialogDescription>
-          </div>
-          <a href={url} download aria-label={`Download ${name}`} className={ICON_BUTTON}><Download className="size-[18px]" /></a>
-          <button type="button" aria-label="Print" onClick={print} className={ICON_BUTTON}><Printer className="size-[18px]" /></button>
-          <DialogClose aria-label="Close" className={ICON_BUTTON}><X className="size-[18px]" /></DialogClose>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-[20px] overflow-y-auto px-[20px] pb-[20px] lg:flex-row lg:overflow-visible">
-          <div className="flex min-h-[60vh] min-w-0 flex-1 items-center justify-center lg:min-h-0">
-          {contentType === "application/pdf"
-            ? <iframe ref={frame} src={url} title={name} className="size-full rounded-lg bg-white" />
-            // eslint-disable-next-line @next/next/no-img-element -- the signed address is not an optimisable asset
-            : <img src={url} alt={name} className="max-h-full max-w-full rounded-lg object-contain" />}
-          </div>
-          <FileDetails contentType={contentType} size={size} requiredFor={requiredFor} uploadedAt={uploadedAt} applicantName={applicantName} />
-        </div>
+        <ViewerBody name={name} contentType={contentType} url={url} applicantName={applicantName} size={size} requiredFor={requiredFor} uploadedAt={uploadedAt} />
       </DialogContent>
     </Dialog>
   );
