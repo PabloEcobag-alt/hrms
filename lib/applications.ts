@@ -17,7 +17,10 @@ export type ApplicationListItem = {
 type SubmittedDocument = { id: number; name: string; size: number; contentType: string; requiredFor: string };
 export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
   | { requiredFor: string; status: "Requested" };
+export type InterviewInput = { startsAt: string; endsAt: string; type: "Online" | "In person"; interviewerName: string; location: string };
+export type ApplicationInterview = Omit<InterviewInput, "startsAt" | "endsAt"> & { id: number; startsAt: Date; endsAt: Date };
 export type ApplicationActivity = {
+  interviewId?: number;
   id: number;
   fromStage: ApplicationStage;
   toStage: ApplicationStage;
@@ -26,6 +29,7 @@ export type ApplicationActivity = {
   occurredAt: Date;
 };
 export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
+  interviews: ApplicationInterview[];
   documents: ApplicationDocument[];
   stageDates: Partial<Record<ApplicationStage, Date>>;
   activity: ApplicationActivity[];
@@ -112,20 +116,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
     };
   }
 
-  return {
-    /** The caller supplies the Stage they reviewed, so stale actions cannot advance it twice. */
-    async moveStage(id: number, fromStage: ApplicationStage, toStage: ApplicationStage, reason?: string): Promise<void> {
-      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
-      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
-      const forward: Partial<Record<ApplicationStage, ApplicationStage>> = {
-        New: "Screening", Screening: "Interview", Interview: "Offer", Offer: "Hired",
-      };
-      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
-        || !Object.hasOwn(forward, fromStage)
-        || (toStage !== "Rejected" && forward[fromStage] !== toStage)
-        || (reason !== undefined && (typeof reason !== "string" || toStage !== "Rejected"))) {
-        throw new ApplicationError("validation");
-      }
+  async function recordChange(id: number, fromStage: ApplicationStage, toStage: ApplicationStage, actorName: string, reason?: string, interview?: InterviewInput) {
       // One statement is one transaction: a failed history/activity insert rolls back the status.
       // PostgreSQL rechecks this status predicate after waiting for a concurrent writer.
       const { rows } = await db.query<{ moved: boolean; exists: boolean }>(`
@@ -133,9 +124,14 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
           UPDATE public.applications SET status = $3, updated_at = statement_timestamp()
           WHERE id = $1 AND status = $2
           RETURNING id, applicant_id, updated_at
+        ), interview AS (
+          INSERT INTO public.hrms_application_interviews
+            (application_id, starts_at, ends_at, type, interviewer_name, location)
+          SELECT id, $7::timestamptz, $8::timestamptz, $9, $10, $11 FROM moved WHERE $7::timestamptz IS NOT NULL
+          RETURNING id
         ), history AS (
           INSERT INTO public.hrms_application_stage_history (application_id, stage, reached_at)
-          SELECT id, $3, updated_at FROM moved
+          SELECT id, $3, updated_at FROM moved WHERE $2 <> $3
         ), notification AS (
           INSERT INTO public.hrms_application_notifications (id, payload)
           SELECT 'application.stage:' || m.id || ':' || $3, jsonb_build_object(
@@ -150,13 +146,43 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
           ON CONFLICT (id) DO NOTHING
         ), activity AS (
           INSERT INTO public.hrms_application_activity
-            (application_id, from_stage, to_stage, actor_name, reason, occurred_at)
-          SELECT id, $4, $3, $5, $6, updated_at FROM moved
+            (application_id, from_stage, to_stage, actor_name, reason, occurred_at, interview_id)
+          SELECT id, $4, $3, $5, $6, updated_at, (SELECT id FROM interview) FROM moved
         )
         SELECT EXISTS(SELECT 1 FROM moved) AS moved,
           EXISTS(SELECT 1 FROM public.applications WHERE id = $1) AS exists`,
-      [id, fromStage === "New" ? "Received" : fromStage, toStage, fromStage, access.staff.name, reason ?? null]);
+      [id, fromStage === "New" ? "Received" : fromStage, toStage, fromStage, actorName, reason ?? null, interview?.startsAt ?? null, interview?.endsAt ?? null, interview?.type ?? null, interview?.interviewerName.trim() ?? null, interview?.location.trim() ?? null]);
       if (!rows[0].moved) throw new ApplicationError(rows[0].exists ? "conflict" : "not-found");
+  }
+
+  return {
+    /** The caller supplies the Stage they reviewed, so stale actions cannot advance it twice. */
+    async moveStage(id: number, fromStage: ApplicationStage, toStage: ApplicationStage, reason?: string): Promise<void> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      const forward: Partial<Record<ApplicationStage, ApplicationStage>> = {
+        New: "Screening", Screening: "Interview", Interview: "Offer", Offer: "Hired",
+      };
+      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+        || !Object.hasOwn(forward, fromStage)
+        || (toStage !== "Rejected" && forward[fromStage] !== toStage)
+        || (reason !== undefined && (typeof reason !== "string" || toStage !== "Rejected"))) {
+        throw new ApplicationError("validation");
+      }
+      await recordChange(id, fromStage, toStage, access.staff.name, reason);
+    },
+    async scheduleInterview(id: number, fromStage: ApplicationStage, interview: InterviewInput): Promise<void> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      const timestamp = (value: unknown) => typeof value === "string" && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+        || !["Screening", "Interview"].includes(fromStage) || !interview
+        || !timestamp(interview.startsAt) || !timestamp(interview.endsAt)
+        || Date.parse(interview.endsAt) <= Date.parse(interview.startsAt)
+        || !["Online", "In person"].includes(interview.type)
+        || typeof interview.interviewerName !== "string" || !interview.interviewerName.trim()
+        || typeof interview.location !== "string" || !interview.location.trim()) throw new ApplicationError("validation");
+      await recordChange(id, fromStage, "Interview", access.staff.name, undefined, interview);
     },
     async downloadDocument(id: number, documentId: number): Promise<Response> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
@@ -197,8 +223,13 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
       // Careers snapshots use phone/location. Older snapshots omit email and the
       // optional salary/availability fields; only email has a legacy identity fallback.
-      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "stageDates" | "activity"> & { stage_dates: Partial<Record<ApplicationStage, string>>; activity: (Omit<ApplicationActivity, "occurredAt"> & { occurredAt: string })[]; documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
+      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "stageDates" | "activity" | "interviews"> & { interviews: (Omit<ApplicationInterview, "startsAt" | "endsAt"> & { startsAt: string; endsAt: string })[]; stage_dates: Partial<Record<ApplicationStage, string>>; activity: (Omit<ApplicationActivity, "occurredAt"> & { occurredAt: string })[]; documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
         SELECT a.documents_snapshot, j.required_documents, a.id,
+          COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'id', i.id, 'startsAt', i.starts_at, 'endsAt', i.ends_at, 'type', i.type,
+            'interviewerName', i.interviewer_name, 'location', i.location
+          ) ORDER BY i.starts_at, i.id) FROM public.hrms_application_interviews i
+            WHERE i.application_id = a.id), '[]'::jsonb) AS interviews,
           jsonb_build_object('New', a.created_at) || COALESCE((
             SELECT jsonb_object_agg(h.stage, h.reached_at)
             FROM public.hrms_application_stage_history h WHERE h.application_id = a.id
@@ -206,7 +237,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id', e.id, 'fromStage', e.from_stage, 'toStage', e.to_stage,
             'actorName', e.actor_name, 'reason', e.reason, 'occurredAt', e.occurred_at
-          ) ORDER BY e.occurred_at DESC, e.id DESC)
+          ) || CASE WHEN e.interview_id IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('interviewId', e.interview_id) END ORDER BY e.occurred_at DESC, e.id DESC)
             FROM public.hrms_application_activity e WHERE e.application_id = a.id), '[]'::jsonb) AS activity, a.profile_snapshot->>'fullName' AS "applicantName",
           COALESCE(a.profile_snapshot->>'email', p.email) AS "applicantEmail",
           a.profile_snapshot->>'phone' AS mobile,
@@ -221,8 +252,9 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         JOIN public.job_postings j ON j.id = a.job_posting_id
         WHERE a.id = $1`, [id]);
       if (!rows[0]) throw new ApplicationError("not-found");
-      const { documents_snapshot, required_documents, stage_dates, activity, ...profile } = rows[0];
+      const { documents_snapshot, required_documents, stage_dates, activity, interviews, ...profile } = rows[0];
       return { ...profile,
+        interviews: interviews.map((item) => ({ ...item, startsAt: new Date(item.startsAt), endsAt: new Date(item.endsAt) })),
         stageDates: Object.fromEntries(Object.entries(stage_dates).map(([stage, date]) => [stage, new Date(date)])),
         activity: activity.map((entry) => ({ ...entry, occurredAt: new Date(entry.occurredAt) })),
         documents: [

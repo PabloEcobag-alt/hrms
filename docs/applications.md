@@ -64,3 +64,19 @@ files return not-found. Storage failures return unavailable.
 
 HRMS must have access to the **same private Blob store as Careers**, via its
 Vercel store connection or `BLOB_READ_WRITE_TOKEN`. No database migration is needed.
+
+## Scheduling interviews
+
+`applicationsFor(sessionHandle, db).scheduleInterview(id, fromStage, input)`
+accepts the Stage Staff reviewed and `{ startsAt, endsAt, type, interviewerName,
+location }`. Timestamps must include a timezone, end after start, and type must
+be `Online` or `In person`. Interviewer name and location are required typed text.
+Only Screening and Interview accept scheduling. A stale Stage returns `conflict`;
+a missing Application returns `not-found`. Every call rechecks Module access.
+
+Scheduling from Screening uses the same guarded status write as `moveStage` to
+reach Interview. Scheduling from Interview adds another interview without changing
+the tracker date. The interview, optional Stage history, and activity with the
+acting Staff name commit atomically. `readProfile` returns `interviews` ordered by
+start time then id, and scheduling activity includes `interviewId`.
+Run migration `0013-application-interviews.sql` before using this boundary.

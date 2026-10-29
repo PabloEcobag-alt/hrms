@@ -253,7 +253,7 @@ it("reads Application profile details from the submitted snapshot rather than th
     location: "Quezon City", expectedSalary: 25000, availableFrom: "2026-11-01",
   }), id]);
   expect(await applicationsFor(handle, db).readProfile(id)).toEqual({
-    id, documents: [], stageDates: { New: new Date("2026-10-01T08:00:00Z") }, activity: [], applicantName: "Submitted Name", applicantEmail: "submitted@example.test",
+    id, interviews: [], documents: [], stageDates: { New: new Date("2026-10-01T08:00:00Z") }, activity: [], applicantName: "Submitted Name", applicantEmail: "submitted@example.test",
     mobile: "09171234567", address: "Quezon City", expectedSalary: 25000, availableFrom: "2026-11-01",
     jobPostingId: "posting-1", jobPostingTitle: "Cashier", location: "Manila",
     stage: "Screening", appliedAt: new Date("2026-10-01T08:00:00Z"),
@@ -473,4 +473,74 @@ it("validates Stage write inputs and reports missing Applications", async () => 
   // @ts-expect-error exercise untyped boundary inputs
   await expect(applications.moveStage(1, "New", "Rejected", 42)).rejects.toMatchObject({ reason: "validation" });
   await expect(applications.moveStage(1, "New", "Screening", "reason")).rejects.toMatchObject({ reason: "validation" });
+});
+
+const interview = { startsAt: '2026-11-03T09:00:00+08:00', endsAt: '2026-11-03T10:00:00+08:00', type: 'Online' as const, interviewerName: 'Bea Santos', location: 'Meeting link' };
+
+it('schedules from Screening atomically and records the interview and acting Staff', async () => {
+  const id = await seed(1, 'Screening');
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, 'Screening', interview);
+  const profile = await applications.readProfile(id);
+  expect(profile.stage).toBe('Interview');
+  expect(profile.stageDates.Interview).toBeInstanceOf(Date);
+  expect(profile.interviews).toEqual([{ ...interview, id: expect.any(Number), startsAt: new Date(interview.startsAt), endsAt: new Date(interview.endsAt) }]);
+  expect(profile.activity).toMatchObject([{ actorName: staff.name, interviewId: profile.interviews[0].id, fromStage: 'Screening', toStage: 'Interview' }]);
+  await applications.scheduleInterview(id, 'Interview', { ...interview, type: 'In person', location: 'Office' });
+  const again = await applications.readProfile(id);
+  expect(again.interviews).toHaveLength(2);
+  expect(again.activity).toHaveLength(2);
+  expect(again.stageDates.Interview).toEqual(profile.stageDates.Interview);
+});
+
+it('refuses scheduling outside Screening or Interview and rejects stale writes', async () => {
+  const applications = applicationsFor(handle, db);
+  for (const [index, stage] of ['New', 'Offer', 'Hired', 'Rejected', 'Withdrawn'].entries()) {
+    const id = await seed(index, stage === 'New' ? 'Received' : stage);
+    // @ts-expect-error exercise runtime Stage validation
+    await expect(applications.scheduleInterview(id, stage, interview)).rejects.toMatchObject({ reason: 'validation' });
+    await expect(applications.scheduleInterview(id, 'Screening', interview)).rejects.toMatchObject({ reason: 'conflict' });
+    expect((await applications.readProfile(id)).interviews).toEqual([]);
+  }
+  await expect(applications.scheduleInterview(999, 'Screening', interview)).rejects.toMatchObject({ reason: 'not-found' });
+});
+
+it('allows only one concurrent action from Screening and rolls back failed activity', async () => {
+  const id = await seed(1, 'Screening');
+  const applications = applicationsFor(handle, db);
+  const results = await Promise.allSettled([
+    applications.scheduleInterview(id, 'Screening', interview),
+    applications.moveStage(id, 'Screening', 'Rejected'),
+  ]);
+  expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+  expect((await applications.readProfile(id)).activity).toHaveLength(1);
+  const other = await seed(2, 'Screening');
+  await db.exec('ALTER TABLE hrms_application_activity ADD CONSTRAINT fail_interview CHECK (interview_id IS NULL) NOT VALID');
+  await expect(applications.scheduleInterview(other, 'Screening', interview)).rejects.toThrow();
+  expect(await applications.readProfile(other)).toMatchObject({ stage: 'Screening', interviews: [], activity: [] });
+});
+
+it('validates interview details without writing', async () => {
+  const id = await seed(1, 'Screening');
+  const applications = applicationsFor(handle, db);
+  for (const invalid of [{ type: 'Phone' }, { startsAt: 'bad' }, { endsAt: interview.startsAt }, { interviewerName: ' ' }, { location: '' }, { startsAt: '2026-11-03T09:00:00' }]) {
+    // @ts-expect-error exercise runtime input validation
+    await expect(applications.scheduleInterview(id, 'Screening', { ...interview, ...invalid })).rejects.toMatchObject({ reason: 'validation' });
+  }
+  expect((await applications.readProfile(id)).interviews).toEqual([]);
+});
+
+it.each(['denied', 'invalid', 'unavailable'] as const)('scheduling fails closed on %s', async (reason) => {
+  const restricted = reason === 'denied' ? portal.signIn(staff, ['Attendance']) : reason === 'invalid' ? undefined : handle;
+  portal.unavailable = reason === 'unavailable';
+  await db.close();
+  await expect(applicationsFor(restricted, db).scheduleInterview(1, 'Screening', interview)).rejects.toMatchObject({ reason });
+});
+
+it('rechecks access before scheduling again', async () => {
+  const id = await seed(1, 'Interview');
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, 'Interview', interview);
+  portal.endSession(handle);
+  await expect(applications.scheduleInterview(id, 'Interview', interview)).rejects.toMatchObject({ reason: 'invalid' });
 });
