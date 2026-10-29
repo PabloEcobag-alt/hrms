@@ -69,7 +69,7 @@ function ApplicationDetails({ profile }: { profile: ApplicationProfile }) {
         <Detail label="Expected salary" value={formatSalary(profile.expectedSalary)} />
         <Detail label="Available from" value={formatAvailableFrom(profile.availableFrom)} />
       </dl>
-      <ApplicationDocuments documents={profile.documents} />
+      <ApplicationDocuments documents={profile.documents} applicantName={profile.applicantName} />
     </Card>
   );
 }
