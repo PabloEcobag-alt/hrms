@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -104,5 +104,13 @@ describe("application profile view", () => {
     expect(formatAvailableFrom("soon")).toBe("—");
     expect(detailOrDash("  ")).toBe("—");
     expect(formatAppliedFor("Branch Cashier", "Cainta branch", new Date("2026-10-20T01:00:00Z"))).toBe("Applied for Branch Cashier · Cainta branch · 20 Oct 2026");
+  });
+
+  it("sizes a file the way the Documents card reads it", () => {
+    expect(formatFileSize(512)).toBe("512 B");
+    expect(formatFileSize(312 * 1024)).toBe("312 KB");
+    expect(formatFileSize(1.2 * 1024 * 1024)).toBe("1.2 MB");
+    expect(formatFileSize(1024 * 1024)).toBe("1 MB");
+    expect(formatFileSize(0)).toBe("0 B");
   });
 });

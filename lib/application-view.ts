@@ -116,3 +116,10 @@ export const formatAppliedFor = (title: string, location: string, appliedAt: Dat
 
 /** A blank detail reads as a dash. */
 export const detailOrDash = (value: string | null) => value?.trim() || "—";
+
+/** "312 KB" or "1.2 MB": the size of a submitted file. */
+export function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Number((bytes / (1024 * 1024)).toFixed(1))} MB`;
+}

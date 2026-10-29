@@ -9,6 +9,7 @@ import { ApplicationError, type ApplicationProfile } from "@/lib/applications";
 import { STAGE_BADGE, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
+import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import { ProfileSkeleton } from "./profile-skeleton";
 
 function Tracker({ profile }: { profile: ApplicationProfile }) {
@@ -63,6 +64,7 @@ function ApplicationDetails({ profile }: { profile: ApplicationProfile }) {
         <Detail label="Expected salary" value={formatSalary(profile.expectedSalary)} />
         <Detail label="Available from" value={formatAvailableFrom(profile.availableFrom)} />
       </dl>
+      <ApplicationDocuments documents={profile.documents} />
     </Card>
   );
 }
