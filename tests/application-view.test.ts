@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -43,6 +43,14 @@ describe("application list view", () => {
     expect(applicantsHref({})).toBe("/applicants");
     expect(applicantsHref({ stage: "All", page: 1 })).toBe("/applicants");
     expect(applicantsHref({ stage: "Offer", search: "a&b", page: 3 })).toBe("/applicants?stage=Offer&q=a%26b&page=3");
+  });
+
+  it("keeps the Job in list links and reads it from the URL", () => {
+    expect(applicantsHref({ job: "12", stage: "Offer", search: "ana", page: 2 })).toBe("/applicants?stage=Offer&q=ana&job=12&page=2");
+    expect(applicantsHref({ job: "12" })).toBe("/applicants?job=12");
+    expect(jobFromParam(" 12 ")).toBe("12");
+    expect(jobFromParam("  ")).toBeUndefined();
+    expect(jobFromParam(undefined)).toBeUndefined();
   });
 
   it("words the Showing line", () => {

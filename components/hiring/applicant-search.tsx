@@ -9,8 +9,8 @@ import type { ApplicationTab } from "@/lib/applications";
 
 const DEBOUNCE_MS = 300;
 
-/** Search lives in the URL beside the Stage tab; typing waits for a pause, keeps the tab and returns to page 1. */
-export function ApplicantSearch({ stage, search }: { stage: ApplicationTab; search: string }) {
+/** Search lives in the URL beside the Stage tab; typing waits for a pause, keeps the tab, Job and returns to page 1. */
+export function ApplicantSearch({ stage, search, job }: { stage: ApplicationTab; search: string; job?: string }) {
   const router = useRouter();
   const [value, setValue] = useState(search);
   const applied = useRef(search);
@@ -20,10 +20,10 @@ export function ApplicantSearch({ stage, search }: { stage: ApplicationTab; sear
     if (next === applied.current) return;
     const timer = setTimeout(() => {
       applied.current = next;
-      router.replace(applicantsHref({ stage, search: next }), { scroll: false });
+      router.replace(applicantsHref({ stage, search: next, job }), { scroll: false });
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [value, stage, router]);
+  }, [value, stage, job, router]);
 
   return (
     <form role="search" className="relative w-full sm:max-w-[16rem]" onSubmit={(event) => event.preventDefault()}>

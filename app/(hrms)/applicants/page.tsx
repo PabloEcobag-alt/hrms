@@ -5,12 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { ApplicantJobFilter } from "@/components/hiring/applicant-job-filter";
 import { ApplicantSearch } from "@/components/hiring/applicant-search";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
 import { CELL, HEAD, PAGE, PageHeader, PersonCell } from "@/components/hiring/parts";
 import { ApplicationError, type ApplicationListItem, type ApplicationPage, type ApplicationTab } from "@/lib/applications";
-import { STAGE_BADGE, STAGE_TABS, applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { STAGE_BADGE, STAGE_TABS, applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
 
@@ -61,10 +62,10 @@ function ApplicantsTable({ rows }: { rows: ApplicationListItem[] }) {
   );
 }
 
-function Pager({ result, stage, search }: { result: ApplicationPage; stage: ApplicationTab; search?: string }) {
+function Pager({ result, stage, search, job }: { result: ApplicationPage; stage: ApplicationTab; search?: string; job?: string }) {
   const { page, pageSize, total, rows } = result;
   const last = pageCount(total, pageSize);
-  const href = (target: number) => applicantsHref({ stage, search, page: target });
+  const href = (target: number) => applicantsHref({ stage, search, job, page: target });
   return (
     <nav aria-label="Pagination" className="flex items-center justify-between pt-2">
       <p className="text-sm text-muted-foreground">{formatRange(page, pageSize, total, rows.length)}</p>
@@ -81,10 +82,10 @@ function Pager({ result, stage, search }: { result: ApplicationPage; stage: Appl
   );
 }
 
-async function Listing({ page, stage, search }: { page: number; stage: ApplicationTab; search?: string }) {
+async function Listing({ page, stage, search, job }: { page: number; stage: ApplicationTab; search?: string; job?: string }) {
   let result: ApplicationPage;
   try {
-    result = await (await applicationsForRequest()).list({ page, stage, search });
+    result = await (await applicationsForRequest()).list({ page, stage, search, jobPostingId: job });
   } catch (error) {
     if (!(error instanceof ApplicationError)) throw error;
     return (
@@ -99,8 +100,8 @@ async function Listing({ page, stage, search }: { page: number; stage: Applicati
     );
   }
 
-  const { rows, total, newThisWeek, stageCounts } = result;
-  const filtered = stage !== "All" || search !== undefined;
+  const { rows, total, newThisWeek, stageCounts, jobPostingOptions } = result;
+  const filtered = stage !== "All" || search !== undefined || job !== undefined;
   return (
     <>
       <PageHeader title={TITLE} subtitle={formatSubtitle(stageCounts.All, newThisWeek)} />
@@ -108,7 +109,7 @@ async function Listing({ page, stage, search }: { page: number; stage: Applicati
         {STAGE_TABS.map((tab) => (
           <Link
             key={tab}
-            href={applicantsHref({ stage: tab, search })}
+            href={applicantsHref({ stage: tab, search, job })}
             aria-current={tab === stage ? "page" : undefined}
             className={cn(
               "rounded-lg px-[14px] py-[8px] text-sm font-medium text-muted-foreground hover:text-foreground",
@@ -120,7 +121,8 @@ async function Listing({ page, stage, search }: { page: number; stage: Applicati
         ))}
       </nav>
       <div className="flex flex-wrap items-center gap-sm">
-        <ApplicantSearch stage={stage} search={search ?? ""} />
+        <ApplicantJobFilter stage={stage} search={search} job={job} options={jobPostingOptions} allCount={job === undefined ? stageCounts.All : undefined} />
+        <ApplicantSearch stage={stage} search={search ?? ""} job={job} />
         <p className="ml-auto text-xs text-muted-foreground">{formatShowing(total)}</p>
       </div>
       <Card className="flex flex-col gap-[14px] overflow-auto rounded-xl p-[20px] shadow-none">
@@ -129,13 +131,13 @@ async function Listing({ page, stage, search }: { page: number; stage: Applicati
             <p>{filtered ? "No applicants match these filters." : "No applicants yet."}</p>
           </Notice>
         ) : rows.length === 0 ? (
-          <Notice action={<Button asChild><Link href={applicantsHref({ stage, search })}>Back to the first page</Link></Button>}>
+          <Notice action={<Button asChild><Link href={applicantsHref({ stage, search, job })}>Back to the first page</Link></Button>}>
             <p>There are no applicants on this page.</p>
           </Notice>
         ) : (
           <ApplicantsTable rows={rows} />
         )}
-        {total > 0 && <Pager result={result} stage={stage} search={search} />}
+        {total > 0 && <Pager result={result} stage={stage} search={search} job={job} />}
       </Card>
     </>
   );
@@ -143,7 +145,7 @@ async function Listing({ page, stage, search }: { page: number; stage: Applicati
 
 export default async function Page({ searchParams }: PageProps<"/applicants">) {
   await requireModule("Recruitment and Hiring");
-  const { page, stage, q } = await searchParams;
+  const { page, stage, q, job } = await searchParams;
   const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
   return (
@@ -156,7 +158,7 @@ export default async function Page({ searchParams }: PageProps<"/applicants">) {
           </>
         }
       >
-        <Listing page={pageFromParam(first(page))} stage={stageFromParam(first(stage))} search={searchFromParam(first(q))} />
+        <Listing page={pageFromParam(first(page))} stage={stageFromParam(first(stage))} search={searchFromParam(first(q))} job={jobFromParam(first(job))} />
       </Suspense>
     </div>
   );
