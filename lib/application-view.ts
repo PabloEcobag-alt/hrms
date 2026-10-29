@@ -73,3 +73,46 @@ export function exportHref({ stage, search, job }: { stage?: ApplicationTab; sea
 /** "applicants-2026-10-22.csv": the day of the export in Manila time. */
 export const exportFileName = (now: Date) =>
   `applicants-${now.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" })}.csv`;
+
+export type TrackerStep = { label: string; state: "done" | "current" | "upcoming"; date: string };
+
+const TRACKER_STAGES = ["New", "Screening", "Interview", "Offer", "Hired"] as const;
+const TRACKER_LABEL: Record<(typeof TRACKER_STAGES)[number], string> = { New: "Applied", Screening: "Screening", Interview: "Interview", Offer: "Offer", Hired: "Hired" };
+
+const manila = (date: Date, options: Intl.DateTimeFormatOptions) => date.toLocaleString("en-GB", { timeZone: "Asia/Manila", ...options });
+
+/**
+ * The five tracker steps. Reached steps are done and the current Stage is marked; later steps are empty with no date.
+ * A Rejected or Withdrawn Application has no current step: the steps it reached stay done.
+ */
+export function trackerSteps(stage: ApplicationStage, stageDates: Partial<Record<ApplicationStage, Date>>): TrackerStep[] {
+  const at = TRACKER_STAGES.indexOf(stage as (typeof TRACKER_STAGES)[number]);
+  return TRACKER_STAGES.map((step, index) => {
+    const reached = at >= 0 ? index <= at : stageDates[step] !== undefined;
+    const date = stageDates[step];
+    return {
+      label: TRACKER_LABEL[step],
+      state: !reached ? "upcoming" : index === at && step !== "Hired" ? "current" : "done",
+      date: !reached || !date ? "—"
+        : step === "Interview" ? `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`
+        : manila(date, { day: "numeric", month: "short" }),
+    };
+  });
+}
+
+/** "₱16,000 / month", or a dash when the Applicant gave none. */
+export const formatSalary = (salary: number | null) => salary === null ? "—" : `₱${salary.toLocaleString("en-US")} / month`;
+
+/** "3 Nov 2026" from a date or timestamp string; a dash when missing or unreadable. */
+export function formatAvailableFrom(value: string | null) {
+  const date = value ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value) : null;
+  return date && Number.isFinite(date.getTime())
+    ? date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: /^\d{4}-\d{2}-\d{2}$/.test(value!) ? "UTC" : "Asia/Manila" })
+    : "—";
+}
+
+/** "Applied for Branch Cashier · Cainta branch · 20 Oct 2026". */
+export const formatAppliedFor = (title: string, location: string, appliedAt: Date) => `Applied for ${title} · ${location} · ${formatApplied(appliedAt)}`;
+
+/** A blank detail reads as a dash. */
+export const detailOrDash = (value: string | null) => value?.trim() || "—";
