@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { BackLink, CardTitle, PAGE, PageHeader } from "@/components/hiring/parts";
+import { BackLink, CardTitle, PAGE, PageHeader, ProfileColumns } from "@/components/hiring/parts";
 import { ApplicationError, type ApplicationProfile } from "@/lib/applications";
 import { STAGE_BADGE, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
@@ -87,14 +87,7 @@ async function Profile({ id }: { id: number }) {
         badge={<Badge variant={STAGE_BADGE[profile.stage]}>{profile.stage}</Badge>}
       />
       <Tracker profile={profile} />
-      <div className="flex flex-col items-start gap-[16px] lg:flex-row">
-        <div className="flex w-full min-w-0 flex-1 flex-col gap-[16px]">
-          <ApplicationDetails profile={profile} />
-        </div>
-        <div className="flex w-full shrink-0 flex-col gap-[16px] lg:w-[380px]">
-          <ApplicationActivity profile={profile} />
-        </div>
-      </div>
+      <ProfileColumns main={<ApplicationDetails profile={profile} />} aside={<ApplicationActivity profile={profile} />} />
     </>
   );
 }
