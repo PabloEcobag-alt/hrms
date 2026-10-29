@@ -4,11 +4,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { ApplicantSearch } from "@/components/hiring/applicant-search";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
 import { CELL, HEAD, PAGE, PageHeader, PersonCell } from "@/components/hiring/parts";
-import { ApplicationError, type ApplicationListItem, type ApplicationPage } from "@/lib/applications";
-import { STAGE_BADGE, formatApplied, formatRange, formatSubtitle, pageCount, pageFromParam } from "@/lib/application-view";
+import { ApplicationError, type ApplicationListItem, type ApplicationPage, type ApplicationTab } from "@/lib/applications";
+import { STAGE_BADGE, STAGE_TABS, applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
 
@@ -59,10 +61,10 @@ function ApplicantsTable({ rows }: { rows: ApplicationListItem[] }) {
   );
 }
 
-function Pager({ result }: { result: ApplicationPage }) {
+function Pager({ result, stage, search }: { result: ApplicationPage; stage: ApplicationTab; search?: string }) {
   const { page, pageSize, total, rows } = result;
   const last = pageCount(total, pageSize);
-  const href = (target: number) => (target === 1 ? "/applicants" : `/applicants?page=${target}`);
+  const href = (target: number) => applicantsHref({ stage, search, page: target });
   return (
     <nav aria-label="Pagination" className="flex items-center justify-between pt-2">
       <p className="text-sm text-muted-foreground">{formatRange(page, pageSize, total, rows.length)}</p>
@@ -79,10 +81,10 @@ function Pager({ result }: { result: ApplicationPage }) {
   );
 }
 
-async function Listing({ page }: { page: number }) {
+async function Listing({ page, stage, search }: { page: number; stage: ApplicationTab; search?: string }) {
   let result: ApplicationPage;
   try {
-    result = await (await applicationsForRequest()).list({ page });
+    result = await (await applicationsForRequest()).list({ page, stage, search });
   } catch (error) {
     if (!(error instanceof ApplicationError)) throw error;
     return (
@@ -97,21 +99,43 @@ async function Listing({ page }: { page: number }) {
     );
   }
 
-  const { rows, total, newThisWeek } = result;
+  const { rows, total, newThisWeek, stageCounts } = result;
+  const filtered = stage !== "All" || search !== undefined;
   return (
     <>
-      <PageHeader title={TITLE} subtitle={formatSubtitle(total, newThisWeek)} />
+      <PageHeader title={TITLE} subtitle={formatSubtitle(stageCounts.All, newThisWeek)} />
+      <nav aria-label="Stage" className="flex flex-wrap gap-xs">
+        {STAGE_TABS.map((tab) => (
+          <Link
+            key={tab}
+            href={applicantsHref({ stage: tab, search })}
+            aria-current={tab === stage ? "page" : undefined}
+            className={cn(
+              "rounded-lg px-[14px] py-[8px] text-sm font-medium text-muted-foreground hover:text-foreground",
+              tab === stage && "bg-accent text-primary hover:text-primary",
+            )}
+          >
+            {tab} {stageCounts[tab]}
+          </Link>
+        ))}
+      </nav>
+      <div className="flex flex-wrap items-center gap-sm">
+        <ApplicantSearch stage={stage} search={search ?? ""} />
+        <p className="ml-auto text-xs text-muted-foreground">{formatShowing(total)}</p>
+      </div>
       <Card className="flex flex-col gap-[14px] overflow-auto rounded-xl p-[20px] shadow-none">
         {total === 0 ? (
-          <Notice><p>No applicants yet.</p></Notice>
+          <Notice>
+            <p>{filtered ? "No applicants match these filters." : "No applicants yet."}</p>
+          </Notice>
         ) : rows.length === 0 ? (
-          <Notice action={<Button asChild><Link href="/applicants">Back to the first page</Link></Button>}>
+          <Notice action={<Button asChild><Link href={applicantsHref({ stage, search })}>Back to the first page</Link></Button>}>
             <p>There are no applicants on this page.</p>
           </Notice>
         ) : (
           <ApplicantsTable rows={rows} />
         )}
-        {total > 0 && <Pager result={result} />}
+        {total > 0 && <Pager result={result} stage={stage} search={search} />}
       </Card>
     </>
   );
@@ -119,7 +143,8 @@ async function Listing({ page }: { page: number }) {
 
 export default async function Page({ searchParams }: PageProps<"/applicants">) {
   await requireModule("Recruitment and Hiring");
-  const { page } = await searchParams;
+  const { page, stage, q } = await searchParams;
+  const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
   return (
     <div className={PAGE}>
@@ -131,7 +156,7 @@ export default async function Page({ searchParams }: PageProps<"/applicants">) {
           </>
         }
       >
-        <Listing page={pageFromParam(Array.isArray(page) ? page[0] : page)} />
+        <Listing page={pageFromParam(first(page))} stage={stageFromParam(first(stage))} search={searchFromParam(first(q))} />
       </Suspense>
     </div>
   );

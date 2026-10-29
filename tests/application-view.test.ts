@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatApplied, formatRange, formatSubtitle, pageCount, pageFromParam } from "@/lib/application-view";
+import { applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -26,5 +26,28 @@ describe("application list view", () => {
   it("counts at least one page", () => {
     expect(pageCount(0, 25)).toBe(1);
     expect(pageCount(26, 25)).toBe(2);
+  });
+
+  it("reads the Stage tab from the URL, defaulting to All", () => {
+    expect(stageFromParam("Screening")).toBe("Screening");
+    for (const bad of [undefined, "", "screening", "Withdrawn", "nope"]) expect(stageFromParam(bad)).toBe("All");
+  });
+
+  it("trims the search from the URL and treats blank as none", () => {
+    expect(searchFromParam("  maria ")).toBe("maria");
+    expect(searchFromParam("   ")).toBeUndefined();
+    expect(searchFromParam(undefined)).toBeUndefined();
+  });
+
+  it("builds list links that keep Stage and search and omit defaults", () => {
+    expect(applicantsHref({})).toBe("/applicants");
+    expect(applicantsHref({ stage: "All", page: 1 })).toBe("/applicants");
+    expect(applicantsHref({ stage: "Offer", search: "a&b", page: 3 })).toBe("/applicants?stage=Offer&q=a%26b&page=3");
+  });
+
+  it("words the Showing line", () => {
+    expect(formatShowing(132)).toBe("Showing 132 applicants");
+    expect(formatShowing(1)).toBe("Showing 1 applicant");
+    expect(formatShowing(0)).toBe("Showing 0 applicants");
   });
 });
