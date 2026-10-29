@@ -40,6 +40,7 @@ export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
   expectedSalary: number | null;
   availableFrom: string | null;
 };
+export type ManualApplicantInput = { fullName: string; email: string; mobile: string; address: string; jobPostingId: string; expectedSalary: number; availableFrom: string };
 export type ApplicationTab = "All" | Exclude<ApplicationStage, "Withdrawn">;
 export type ApplicationFilters = { jobPostingId?: string; stage?: ApplicationTab; search?: string };
 export type ApplicationJobPostingOption = { id: string; title: string; applicationCount: number };
@@ -75,7 +76,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
     // One statement keeps rows and counts on the same snapshot, even for an empty page.
     const { rows } = await db.query<{ total: number; new_this_week: number; stage_counts: Record<ApplicationTab, number>; job_posting_options: ApplicationJobPostingOption[]; items: (Omit<ApplicationListItem, "nextStep" | "appliedAt"> & { appliedAt: string; nextInterviewAt: string | null })[] }>(`
       WITH searched AS (
-        SELECT * FROM public.hrms_careers_applications
+        SELECT * FROM public.hrms_all_applications
         WHERE ($4::text IS NULL OR job_posting_id = $4)
           AND (strpos(lower(applicant_name), lower($3::text)) > 0
             OR strpos(lower(applicant_email), lower($3::text)) > 0)
@@ -84,12 +85,12 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         FROM (
           SELECT j.id, j.title, count(a.id)::integer AS "applicationCount"
           FROM public.job_postings j
-          LEFT JOIN public.applications a ON a.job_posting_id = j.id
+          LEFT JOIN public.hrms_all_applications a ON a.job_posting_id = j.id
           WHERE j.status = 'open'
           GROUP BY j.id, j.title
         ) options) AS job_posting_options,
         (SELECT count(*)::integer FROM searched WHERE ($2::text = 'All' OR stage = $2)) AS total,
-        (SELECT count(*)::integer FROM public.hrms_careers_applications
+        (SELECT count(*)::integer FROM public.hrms_all_applications
           WHERE applied_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
             AND applied_at <= CURRENT_TIMESTAMP) AS new_this_week,
         (SELECT jsonb_build_object(
@@ -164,6 +165,42 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
   }
 
   return {
+    /** Records a walk-in or referral on an Open Job Posting in HRMS' own table; applied date is today. */
+    async addApplicant(input: ManualApplicantInput): Promise<number> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      const text = (value: unknown) => typeof value === "string" && value.trim() !== "";
+      const date = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        && new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
+      if (!input || !["fullName", "email", "mobile", "address", "jobPostingId"].every((key) => text(input[key as keyof ManualApplicantInput]))
+        || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())
+        || typeof input.expectedSalary !== "number" || !Number.isFinite(input.expectedSalary) || input.expectedSalary < 0
+        || !date(input.availableFrom)) throw new ApplicationError("validation");
+      const email = input.email.trim();
+      try {
+        // One statement checks the posting and both sources; the unique index settles HR-side races.
+        const { rows } = await db.query<{ id: number | null; posting_status: string | null }>(`
+          WITH posting AS (
+            SELECT status FROM public.job_postings WHERE id = $5
+          ), inserted AS (
+            INSERT INTO public.hrms_manual_applications
+              (full_name, email, mobile, address, job_posting_id, expected_salary, available_from, added_by_name)
+            SELECT $1, $2, $3, $4, $5, $6, $7::date, $8 FROM posting
+            WHERE status = 'open' AND NOT EXISTS (
+              SELECT 1 FROM public.hrms_all_applications a
+              WHERE a.job_posting_id = $5 AND lower(a.applicant_email) = lower($2))
+            RETURNING id
+          )
+          SELECT (SELECT id FROM inserted) AS id, (SELECT status FROM posting) AS posting_status`,
+        [input.fullName.trim(), email, input.mobile.trim(), input.address.trim(), input.jobPostingId,
+          input.expectedSalary, input.availableFrom, access.staff.name]);
+        if (rows[0].id !== null) return rows[0].id;
+        throw new ApplicationError(rows[0].posting_status === null ? "not-found" : "conflict");
+      } catch (error) {
+        if ((error as { code?: string }).code === "23505") throw new ApplicationError("conflict");
+        throw error;
+      }
+    },
     async addNote(id: number, text: string): Promise<void> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
