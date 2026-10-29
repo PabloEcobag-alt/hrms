@@ -18,7 +18,7 @@ type SubmittedDocument = { id: number; name: string; size: number; contentType: 
 export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
   | { requiredFor: string; status: "Requested" };
 export type InterviewInput = { startsAt: string; endsAt: string; type: "Online" | "In person"; interviewerName: string; location: string };
-export type ApplicationInterview = Omit<InterviewInput, "startsAt" | "endsAt"> & { id: number; startsAt: Date; endsAt: Date };
+export type ApplicationInterview = Omit<InterviewInput, "startsAt" | "endsAt"> & { id: number; startsAt: Date; endsAt: Date; score: number | null; result: "Passed" | "Not passed" | null };
 export type ApplicationNote = { id: number; text: string; authorName: string; createdAt: Date };
 export type ApplicationActivity = {
   interviewId?: number;
@@ -73,7 +73,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       throw new ApplicationError("validation");
     }
     // One statement keeps rows and counts on the same snapshot, even for an empty page.
-    const { rows } = await db.query<{ total: number; new_this_week: number; stage_counts: Record<ApplicationTab, number>; job_posting_options: ApplicationJobPostingOption[]; items: (Omit<ApplicationListItem, "nextStep" | "appliedAt"> & { appliedAt: string })[] }>(`
+    const { rows } = await db.query<{ total: number; new_this_week: number; stage_counts: Record<ApplicationTab, number>; job_posting_options: ApplicationJobPostingOption[]; items: (Omit<ApplicationListItem, "nextStep" | "appliedAt"> & { appliedAt: string; nextInterviewAt: string | null })[] }>(`
       WITH searched AS (
         SELECT * FROM public.hrms_careers_applications
         WHERE ($4::text IS NULL OR job_posting_id = $4)
@@ -106,13 +106,19 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       FROM (
         SELECT id, applicant_name AS "applicantName", applicant_email AS "applicantEmail",
           job_posting_id AS "jobPostingId", job_posting_title AS "jobPostingTitle",
-          location, applied_at AS "appliedAt", stage
+          location, applied_at AS "appliedAt", stage,
+          (SELECT min(i.starts_at) FROM public.hrms_application_interviews i
+            WHERE i.application_id = searched.id AND i.starts_at >= CURRENT_TIMESTAMP
+              AND i.result IS NULL) AS "nextInterviewAt"
         FROM searched
         WHERE ($2::text = 'All' OR stage = $2)
         ORDER BY applied_at DESC, id DESC LIMIT $5 OFFSET $1
       ) items`, [(page - 1) * 25, stage, search, jobPostingId ?? null, paginated ? 25 : null]);
     return {
-      rows: rows[0].items.map((item) => ({ ...item, appliedAt: new Date(item.appliedAt), nextStep: nextSteps[item.stage] })),
+      rows: rows[0].items.map(({ nextInterviewAt, ...item }) => ({ ...item, appliedAt: new Date(item.appliedAt),
+        nextStep: item.stage === "Interview" && nextInterviewAt
+          ? `Interview · ${new Date(nextInterviewAt).toLocaleString("en-US", { timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+          : nextSteps[item.stage] })),
       jobPostingOptions: rows[0].job_posting_options,
       newThisWeek: rows[0].new_this_week, stageCounts: rows[0].stage_counts, total: rows[0].total, page, pageSize: 25,
     };
@@ -240,12 +246,18 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         SELECT a.documents_snapshot, j.required_documents, a.id,
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id', i.id, 'startsAt', i.starts_at, 'endsAt', i.ends_at, 'type', i.type,
-            'interviewerName', i.interviewer_name, 'location', i.location
-          ) ORDER BY i.starts_at, i.id) FROM public.hrms_application_interviews i
+            'interviewerName', i.interviewer_name, 'location', i.location, 'score', i.score, 'result', i.result
+          ) ORDER BY i.starts_at DESC, i.id DESC) FROM public.hrms_application_interviews i
             WHERE i.application_id = a.id), '[]'::jsonb) AS interviews,
           jsonb_build_object('New', a.created_at) || COALESCE((
             SELECT jsonb_object_agg(h.stage, h.reached_at)
             FROM public.hrms_application_stage_history h WHERE h.application_id = a.id
+          ), '{}'::jsonb) || COALESCE((
+            SELECT jsonb_build_object('Interview', COALESCE(
+              min(i.starts_at) FILTER (WHERE i.starts_at >= CURRENT_TIMESTAMP AND i.result IS NULL),
+              max(i.starts_at)))
+            FROM public.hrms_application_interviews i WHERE i.application_id = a.id
+            HAVING count(*) > 0
           ), '{}'::jsonb) AS stage_dates,
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id', e.id, 'fromStage', e.from_stage, 'toStage', e.to_stage,
