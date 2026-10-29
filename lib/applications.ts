@@ -1,3 +1,4 @@
+import { get } from "@vercel/blob";
 import { database, type Database } from "./database";
 import { accessFor } from "./portal/access";
 
@@ -13,7 +14,11 @@ export type ApplicationListItem = {
   stage: ApplicationStage;
   nextStep: string;
 };
+type SubmittedDocument = { id: number; name: string; size: number; contentType: string; requiredFor: string };
+export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
+  | { requiredFor: string; status: "Requested" };
 export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
+  documents: ApplicationDocument[];
   mobile: string | null;
   address: string | null;
   expectedSalary: number | null;
@@ -98,14 +103,47 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
   }
 
   return {
+    async downloadDocument(id: number, documentId: number): Promise<Response> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      if (![id, documentId].every((value) => Number.isInteger(value) && value > 0 && value <= 2_147_483_647)) {
+        throw new ApplicationError("validation");
+      }
+      // Resolve storage only for a snapshot member owned by the same Applicant.
+      const { rows } = await db.query<SubmittedDocument & { pathname: string }>(`
+        SELECT snapshot->>'name' AS name, (snapshot->>'size')::integer AS size,
+          snapshot->>'contentType' AS "contentType", d.blob_pathname AS pathname
+        FROM public.applications a
+        CROSS JOIN LATERAL jsonb_array_elements(a.documents_snapshot) snapshot
+        JOIN public.applicant_documents d ON d.id = $2 AND d.applicant_id = a.applicant_id
+        WHERE a.id = $1 AND snapshot->>'id' = $2::text`, [id, documentId]);
+      const document = rows[0];
+      if (!document) throw new ApplicationError("not-found");
+      let blob;
+      try {
+        blob = await get(document.pathname, { access: "private", useCache: false });
+      } catch {
+        throw new ApplicationError("unavailable");
+      }
+      if (!blob) throw new ApplicationError("not-found");
+      if (blob.statusCode !== 200) throw new ApplicationError("unavailable");
+      const filename = encodeURIComponent(document.name).replace(/[!'()*]/g, (character) =>
+        `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+      return new Response(blob.stream, { headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename*=UTF-8''${filename}`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      } });
+    },
     async readProfile(id: number): Promise<ApplicationProfile> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
       if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
       // Careers snapshots use phone/location. Older snapshots omit email and the
       // optional salary/availability fields; only email has a legacy identity fallback.
-      const { rows } = await db.query<ApplicationProfile>(`
-        SELECT a.id, a.profile_snapshot->>'fullName' AS "applicantName",
+      const { rows } = await db.query<Omit<ApplicationProfile, "documents"> & { documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
+        SELECT a.documents_snapshot, j.required_documents, a.id, a.profile_snapshot->>'fullName' AS "applicantName",
           COALESCE(a.profile_snapshot->>'email', p.email) AS "applicantEmail",
           a.profile_snapshot->>'phone' AS mobile,
           a.profile_snapshot->>'location' AS address,
@@ -119,7 +157,13 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         JOIN public.job_postings j ON j.id = a.job_posting_id
         WHERE a.id = $1`, [id]);
       if (!rows[0]) throw new ApplicationError("not-found");
-      return rows[0];
+      const { documents_snapshot, required_documents, ...profile } = rows[0];
+      return { ...profile, documents: [
+        ...documents_snapshot.map((document): ApplicationDocument => ({ ...document, status: "Submitted",
+          downloadUrl: `/api/applications/${id}/documents/${document.id}` })),
+        ...required_documents.filter((required) => !documents_snapshot.some((document) => document.requiredFor === required))
+          .map((requiredFor): ApplicationDocument => ({ requiredFor, status: "Requested" })),
+      ] };
     },
     list: (filters: ApplicationFilters & { page?: number } = {}) => read(filters),
     async exportCsv({ jobPostingId, stage, search }: ApplicationFilters = {}): Promise<string> {

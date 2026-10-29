@@ -43,3 +43,24 @@ Next step labels are fixed per Stage. Interview currently reads `Awaiting result
 upcoming interview dates are added by #143. The filters and counts reuse the
 existing read view, so no additional migration is required. CSV,
 profile reads and mutations belong to subsequent tickets under #133.
+
+## Application documents
+
+`readProfile(id).documents` returns submitted documents from `documents_snapshot`
+with `id`, `name`, `size` (bytes), `contentType`, `requiredFor`, `status: "Submitted"`
+and an HRMS `downloadUrl`. Each Job Posting Required Document with no matching
+snapshot `requiredFor` is included as `{ requiredFor, status: "Requested" }`.
+Requested is a display status only; nothing is written or sent to the Applicant.
+
+`downloadDocument(applicationId, documentId)` returns an attachment Response.
+Every download rechecks the Recruitment and Hiring Module, verifies membership
+in that Application's snapshot and ownership in Careers' `applicant_documents`,
+and streams from the existing private Blob store. No storage path or reusable
+Blob URL is exposed. The HTTP endpoint is
+`GET /api/applications/:id/documents/:documentId`; responses disable browser caching.
+The snapshot supplies the filename even if live document metadata changes.
+Missing Applications, unsubmitted documents, wrong-owner documents and missing
+files return not-found. Storage failures return unavailable.
+
+HRMS must have access to the **same private Blob store as Careers**, via its
+Vercel store connection or `BLOB_READ_WRITE_TOKEN`. No database migration is needed.
