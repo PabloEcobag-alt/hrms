@@ -636,3 +636,80 @@ it("uses the next upcoming interview for Next step, CSV and the tracker, then aw
   await applications.moveStage(id, "Interview", "Offer");
   expect((await applications.list()).rows[0].nextStep).toBe("Awaiting offer decision");
 });
+
+it("records an interview score and result with the acting Staff in activity", async () => {
+  const id = await seed(1, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2020-01-01T09:00:00Z", endsAt: "2020-01-01T10:00:00Z" });
+  const interviewId = (await applications.readProfile(id)).interviews[0].id;
+  await applications.recordInterviewResult(id, interviewId, { score: 4, result: "Passed" });
+  const profile = await applications.readProfile(id);
+  expect(profile.interviews[0]).toMatchObject({ score: 4, result: "Passed" });
+  expect(profile.stage).toBe("Interview");
+  expect(profile.activity[0]).toMatchObject({ interviewId, actorName: staff.name, fromStage: "Interview", toStage: "Interview", reason: "Interview result: Passed (score: 4/5)" });
+});
+
+it("refuses a result before the interview starts and for an interview outside the Application", async () => {
+  const id = await seed(1, "Interview");
+  const other = await seed(2, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2099-01-01T09:00:00Z", endsAt: "2099-01-01T10:00:00Z" });
+  const before = await applications.readProfile(id);
+  const interviewId = before.interviews[0].id;
+  await expect(applications.recordInterviewResult(id, interviewId, { score: 3, result: "Not passed" })).rejects.toMatchObject({ reason: "conflict" });
+  await expect(applications.recordInterviewResult(other, interviewId, { score: 3, result: "Not passed" })).rejects.toMatchObject({ reason: "not-found" });
+  await expect(applications.recordInterviewResult(id, 999, { score: 3, result: "Passed" })).rejects.toMatchObject({ reason: "not-found" });
+  expect(await applications.readProfile(id)).toEqual(before);
+});
+
+it("validates whole scores from 1 to 5 and the two interview results without writing", async () => {
+  const id = await seed(1, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2020-01-01T09:00:00Z", endsAt: "2020-01-01T10:00:00Z" });
+  const before = await applications.readProfile(id);
+  const interviewId = before.interviews[0].id;
+  for (const outcome of [null, {}, { score: 0, result: "Passed" }, { score: 6, result: "Passed" }, { score: 2.5, result: "Passed" }, { score: NaN, result: "Passed" }, { score: "4", result: "Passed" }, { score: 3, result: "Waiting" }]) {
+    // @ts-expect-error exercise untyped boundary inputs
+    await expect(applications.recordInterviewResult(id, interviewId, outcome)).rejects.toMatchObject({ reason: "validation" });
+  }
+  for (const invalidId of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    await expect(applications.recordInterviewResult(invalidId, interviewId, { score: 1, result: "Passed" })).rejects.toMatchObject({ reason: "validation" });
+    await expect(applications.recordInterviewResult(id, invalidId, { score: 1, result: "Passed" })).rejects.toMatchObject({ reason: "validation" });
+  }
+  expect(await applications.readProfile(id)).toEqual(before);
+  for (const score of [1, 5]) {
+    await applications.recordInterviewResult(id, interviewId, { score, result: "Not passed" });
+    expect((await applications.readProfile(id)).interviews[0]).toMatchObject({ score, result: "Not passed" });
+  }
+});
+
+it("rolls back an interview result if its activity cannot be recorded", async () => {
+  const id = await seed(1, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2020-01-01T09:00:00Z", endsAt: "2020-01-01T10:00:00Z" });
+  const before = await applications.readProfile(id);
+  await db.exec("ALTER TABLE hrms_application_activity ADD CONSTRAINT fail_result CHECK (reason IS NULL) NOT VALID");
+  await expect(applications.recordInterviewResult(id, before.interviews[0].id, { score: 4, result: "Passed" })).rejects.toThrow();
+  expect(await applications.readProfile(id)).toEqual(before);
+});
+
+it.each(["denied", "invalid", "unavailable"] as const)("interview results fail closed on %s before querying", async (reason) => {
+  const restricted = reason === "denied" ? portal.signIn(staff, ["Attendance"]) : reason === "invalid" ? undefined : handle;
+  portal.unavailable = reason === "unavailable";
+  await db.close();
+  await expect(applicationsFor(restricted, db).recordInterviewResult(1, 1, { score: 4, result: "Passed" })).rejects.toMatchObject({ reason });
+});
+
+it("keeps results behind Staff access and rechecks access after recording", async () => {
+  const id = await seed(1, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2020-01-01T09:00:00Z", endsAt: "2020-01-01T10:00:00Z" });
+  const interviewId = (await applications.readProfile(id)).interviews[0].id;
+  await applications.recordInterviewResult(id, interviewId, { score: 4, result: "Passed" });
+  expect((await applications.list()).rows[0]).not.toHaveProperty("score");
+  expect(await applications.exportCsv()).not.toContain("Passed");
+  portal.endSession(handle);
+  await expect(applications.recordInterviewResult(id, interviewId, { score: 1, result: "Not passed" })).rejects.toMatchObject({ reason: "invalid" });
+  await expect(applications.readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
+  await expect(applicationsFor(undefined, db).readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
+});

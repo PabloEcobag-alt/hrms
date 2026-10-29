@@ -82,7 +82,7 @@ start time descending then id descending, and scheduling activity includes `inte
 Each interview includes its date/time, end time, type, interviewer, location,
 nullable `score` (1–5), and nullable `result` (`Passed` or `Not passed`). These
 fields are private to authorised Staff. Migration `0015-application-interview-results.sql`
-adds the score and result columns; recording outcomes is handled by #145.
+adds the score and result columns.
 The profile tracker's `stageDates.Interview` uses the next upcoming interview
 without a result, falling back to the latest interview date/time. When no
 interviews exist, the recorded Stage date remains the fallback.
@@ -104,3 +104,21 @@ check protects notes; lists and CSV exports do not contain private notes.
 Run `npm run db:migrate` before deploying this module. Migration
 `0012-application-notes.sql` creates the HRMS-owned `hrms_application_notes`
 table and its Application/time index without changing Careers tables.
+
+## Recording interview results
+
+`applicationsFor(sessionHandle, db).recordInterviewResult(applicationId, interviewId,
+{ score, result })` records a whole-number score from 1 through 5 and either
+`Passed` or `Not passed`. Every call rechecks Recruitment and Hiring access.
+The interview must belong to the Application and have reached its start time
+according to the database clock. A future interview returns `conflict`; a missing
+interview or one belonging to another Application returns `not-found`. Invalid
+ids, scores and results return `validation`.
+
+The result and activity commit atomically. Activity includes `interviewId`, the
+acting Staff name, timestamp and a reason such as
+`Interview result: Passed (score: 4/5)`. Recording or correcting a result does not
+advance the Stage or send an Applicant notification. The data stays in existing
+HRMS-owned tables and is returned only through the authorised Staff profile;
+lists and CSV exports omit scores and results. No new migration is needed beyond
+`0015-application-interview-results.sql`.
