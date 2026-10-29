@@ -77,7 +77,7 @@ it("pages newest applied first with stable ties, a total and empty out-of-range 
 });
 
 it("returns an empty first page when no Applications exist", async () => {
-  expect(await applicationsFor(handle, db).list()).toEqual({ rows: [], total: 0, page: 1, pageSize: 25, newThisWeek: 0,
+  expect(await applicationsFor(handle, db).list()).toEqual({ rows: [], total: 0, page: 1, pageSize: 25, newThisWeek: 0, jobPostingOptions: [],
     stageCounts: { All: 0, New: 0, Screening: 0, Interview: 0, Offer: 0, Hired: 0, Rejected: 0 } });
 });
 
@@ -165,8 +165,37 @@ it("counts Applications applied in the last seven days across Stages and search"
 it.each([
   { stage: "Withdrawn" }, { stage: "Received" }, { stage: "unknown" }, { stage: null },
   { search: 42 }, { search: null },
+  { jobPostingId: 42 }, { jobPostingId: null }, { jobPostingId: "" }, { jobPostingId: "   " },
 ])("refuses invalid list filters %j", async (filters) => {
   // Exercise runtime validation for values received from untyped request parameters.
   // @ts-expect-error intentionally invalid boundary input
   await expect(applicationsFor(handle, db).list(filters)).rejects.toMatchObject({ reason: "validation" });
+});
+
+it("combines Job Posting, Stage, search and paging with Job Posting-scoped tab counts", async () => {
+  for (let i = 0; i < 29; i++) await seed(i, i === 28 ? "Screening" : i === 27 ? "Withdrawn" : "Received");
+  await db.query("UPDATE applications SET job_posting_id = 'posting-0' WHERE id > 1");
+  await seed(30);
+  const applications = applicationsFor(handle, db);
+  const result = await applications.list({ jobPostingId: "posting-0", stage: "New", search: "APPLICANT", page: 2 });
+  expect(result).toMatchObject({ total: 27, stageCounts: { All: 29, New: 27, Screening: 1 } });
+  expect(result.rows.map((row) => row.applicantName)).toEqual(["Applicant 1", "Applicant 0"]);
+  expect((await applications.list({ jobPostingId: "missing" })).total).toBe(0);
+});
+
+it("offers only Open Job Postings with every Application counted independently of list filters", async () => {
+  await seed(1);
+  await seed(2, "Withdrawn");
+  await seed(3, "Rejected");
+  await db.query("UPDATE applications SET job_posting_id = 'posting-1' WHERE id > 1");
+  await seed(4, "Received", "draft");
+  await seed(5, "Hired", "filled");
+  await seed(6, "Screening", "closed");
+  expect((await applicationsFor(handle, db).list({ jobPostingId: "posting-5", stage: "New", search: "absent", page: 2 })).jobPostingOptions).toEqual([
+    { id: "posting-1", title: "Cashier", applicationCount: 3 },
+    { id: "posting-2", title: "Cashier", applicationCount: 0 },
+    { id: "posting-3", title: "Cashier", applicationCount: 0 },
+  ]);
+  expect((await applicationsFor(handle, db).list()).total).toBe(6);
+  expect((await applicationsFor(handle, db).list({ jobPostingId: "posting-5" })).rows.map((row) => row.stage)).toEqual(["Hired"]);
 });
