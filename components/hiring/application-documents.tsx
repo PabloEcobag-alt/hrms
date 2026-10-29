@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ApplicationDocument } from "@/lib/applications";
 import { formatFileSize } from "@/lib/application-view";
-import { canView, DocumentViewer } from "@/components/hiring/document-viewer";
+import { DocumentViewer } from "@/components/hiring/document-viewer";
 
 function DocumentRow({ document, applicantName }: { document: ApplicationDocument; applicantName: string }) {
   const submitted = document.status === "Submitted";
@@ -22,7 +22,7 @@ function DocumentRow({ document, applicantName }: { document: ApplicationDocumen
   );
   return (
     <li className="flex items-center gap-[12px] rounded-lg border border-zinc-200 py-[9px] pr-[12px] pl-[9px]">
-      {submitted && canView(document.contentType)
+      {submitted
         ? <DocumentViewer name={document.name} contentType={document.contentType} url={document.downloadUrl} applicantName={applicantName} size={document.size} requiredFor={document.requiredFor} uploadedAt={document.uploadedAt}>{summary}</DocumentViewer>
         : summary}
       {submitted

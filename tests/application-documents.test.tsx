@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import type { ApplicationDocument } from "@/lib/applications";
 
-afterEach(cleanup);
+const redirect = () => ({ type: "opaqueredirect", ok: false, status: 0 });
+beforeEach(() => { vi.stubGlobal("fetch", vi.fn().mockResolvedValue(redirect())); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const submitted = (id: number, name: string, contentType: string, uploadedAt: Date | null = null): ApplicationDocument => ({
   id, name, contentType, size: 2048, uploadedAt, requiredFor: "Resume or CV", status: "Submitted",
@@ -71,10 +73,47 @@ it("closes with the Close button and with Escape", async () => {
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("offers only a download for a file the browser cannot display", () => {
-  open([submitted(9, "letter.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]);
-  expect(screen.queryByRole("button", { name: "Open letter.docx" })).toBeNull();
-  expect(screen.getByRole("link", { name: "Download letter.docx" })).toBeTruthy();
+const WORD = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+it("opens a Word file to a can't-preview state with download and no print", async () => {
+  open([submitted(9, "letter.docx", WORD)]);
+  await userEvent.click(screen.getByRole("button", { name: "Open letter.docx" }));
+  const dialog = within(screen.getByRole("dialog"));
+  expect(dialog.getByText("Can't preview this file")).toBeTruthy();
+  expect(dialog.queryByRole("button", { name: "Print" })).toBeNull();
+  expect(dialog.getByRole("link", { name: "Download letter.docx" }).getAttribute("href")).toBe("/api/applications/5/documents/9");
+  expect(screen.getByRole("dialog").querySelector("iframe, img")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("keeps a Requested row greyed and closed", async () => {
+  open([{ status: "Requested", requiredFor: "NBI clearance" } as ApplicationDocument]);
+  expect(screen.getByText("Requested")).toBeTruthy();
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByRole("link")).toBeNull();
+});
+
+it("says the file can't be opened on a not-found answer, keeps download and close, and retries", async () => {
+  vi.mocked(fetch).mockResolvedValue({ type: "basic", ok: false, status: 404 } as Response);
+  open([submitted(7, "resume.pdf", "application/pdf")]);
+  await userEvent.click(screen.getByRole("button", { name: "Open resume.pdf" }));
+  const dialog = within(screen.getByRole("dialog"));
+  expect(await dialog.findByText("Can't open this file right now")).toBeTruthy();
+  expect(screen.getByRole("dialog").querySelector("iframe")).toBeNull();
+  expect(dialog.queryByRole("button", { name: "Print" })).toBeNull();
+  expect(dialog.getByRole("link", { name: "Download resume.pdf" })).toBeTruthy();
+  vi.mocked(fetch).mockResolvedValue(redirect() as unknown as Response);
+  await userEvent.click(dialog.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(screen.getByRole("dialog").querySelector("iframe")).not.toBeNull());
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("says the file can't be opened when an image fails to load", async () => {
+  open([submitted(8, "id.png", "image/png")]);
+  await userEvent.click(screen.getByRole("button", { name: "Open id.png" }));
+  fireEvent.error(screen.getByRole("dialog").querySelector("img")!);
+  expect(await screen.findByText("Can't open this file right now")).toBeTruthy();
 });
 
 it("opens an image in a new tab to print it", async () => {
