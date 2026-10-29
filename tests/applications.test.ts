@@ -19,6 +19,7 @@ beforeEach(async () => {
   for (const name of (await readdir(directory)).filter((name) => name.endsWith(".sql")).sort()) {
     await db.exec(await readFile(new URL(name, directory), "utf8"));
   }
+  await db.exec(`CREATE SCHEMA neon_auth; CREATE TABLE neon_auth."user" (id text PRIMARY KEY);`);
   portal = new FakePortal();
   handle = portal.signIn(staff, ["Recruitment and Hiring"]);
   vi.stubGlobal("fetch", portalFetch(portal));

@@ -1,3 +1,4 @@
+import { retryApplicationNotifications } from "@/lib/application-notifications";
 import { closeExpiredJobPostings, retryJobPostingAnnouncements } from "@/lib/job-postings";
 
 export async function GET(request: Request) {
@@ -7,5 +8,6 @@ export async function GET(request: Request) {
   }
   await closeExpiredJobPostings();
   await retryJobPostingAnnouncements();
+  await retryApplicationNotifications();
   return Response.json({ ok: true });
 }

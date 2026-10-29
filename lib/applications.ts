@@ -132,10 +132,22 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         WITH moved AS (
           UPDATE public.applications SET status = $3, updated_at = statement_timestamp()
           WHERE id = $1 AND status = $2
-          RETURNING id, updated_at
+          RETURNING id, applicant_id, updated_at
         ), history AS (
           INSERT INTO public.hrms_application_stage_history (application_id, stage, reached_at)
           SELECT id, $3, updated_at FROM moved
+        ), notification AS (
+          INSERT INTO public.hrms_application_notifications (id, payload)
+          SELECT 'application.stage:' || m.id || ':' || $3, jsonb_build_object(
+            'sendingApp', 'hrms', 'targetApp', 'careers', 'userIds', jsonb_build_array(m.applicant_id),
+            'type', 'application.' || lower($3), 'title', 'Application update: ' || $3,
+            'body', CASE WHEN $3 = 'Rejected'
+              THEN 'Thank you for your interest. Your Application was not selected.'
+              ELSE 'Your Application has moved to ' || $3 || '.' END,
+            'idempotencyKey', 'application.stage:' || m.id || ':' || $3)
+          FROM moved m WHERE $2 <> $3 AND $3 IN ('Interview', 'Offer', 'Hired', 'Rejected')
+            AND EXISTS (SELECT 1 FROM neon_auth."user" u WHERE u.id::text = m.applicant_id)
+          ON CONFLICT (id) DO NOTHING
         ), activity AS (
           INSERT INTO public.hrms_application_activity
             (application_id, from_stage, to_stage, actor_name, reason, occurred_at)
