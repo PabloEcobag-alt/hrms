@@ -713,3 +713,21 @@ it("keeps results behind Staff access and rechecks access after recording", asyn
   await expect(applications.readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
   await expect(applicationsFor(undefined, db).readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
 });
+
+it.each(["Hired", "Rejected", "Withdrawn"])("records a past interview result after the Application becomes %s", async (stage) => {
+  const id = await seed(1, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2020-01-01T09:00:00Z", endsAt: "2020-01-01T10:00:00Z" });
+  const interviewId = (await applications.readProfile(id)).interviews[0].id;
+  if (stage === "Hired") {
+    await applications.moveStage(id, "Interview", "Offer");
+    await applications.moveStage(id, "Offer", "Hired");
+  } else if (stage === "Rejected") {
+    await applications.moveStage(id, "Interview", "Rejected");
+  } else {
+    // Careers owns Applicant withdrawal; HRMS only records the interview outcome.
+    await db.query("UPDATE applications SET status = 'Withdrawn' WHERE id = $1", [id]);
+  }
+  await applications.recordInterviewResult(id, interviewId, { score: 3, result: "Not passed" });
+  expect(await applications.readProfile(id)).toMatchObject({ stage, interviews: [{ score: 3, result: "Not passed" }] });
+});

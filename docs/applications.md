@@ -120,5 +120,6 @@ acting Staff name, timestamp and a reason such as
 `Interview result: Passed (score: 4/5)`. Recording or correcting a result does not
 advance the Stage or send an Applicant notification. The data stays in existing
 HRMS-owned tables and is returned only through the authorised Staff profile;
-lists and CSV exports omit scores and results. No new migration is needed beyond
-`0015-application-interview-results.sql`.
+lists and CSV exports omit scores and results. Run `npm run db:migrate` before
+using this write: `0016-interview-result-activity.sql` permits activity after Hired,
+Rejected or Withdrawn without changing workflow transitions or the Stage.
