@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicantsHref, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { applicantsHref, exportFileName, exportHref, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -57,5 +57,14 @@ describe("application list view", () => {
     expect(formatShowing(132)).toBe("Showing 132 applicants");
     expect(formatShowing(1)).toBe("Showing 1 applicant");
     expect(formatShowing(0)).toBe("Showing 0 applicants");
+  });
+
+  it("links the export to the current Stage, search and Job, never a page", () => {
+    expect(exportHref({})).toBe("/api/applications/export");
+    expect(exportHref({ stage: "Screening", search: "ana", job: "7" })).toBe("/api/applications/export?stage=Screening&q=ana&job=7");
+  });
+
+  it("dates the export file in Manila time", () => {
+    expect(exportFileName(new Date("2026-10-21T17:00:00Z"))).toBe("applicants-2026-10-22.csv");
   });
 });
