@@ -484,7 +484,7 @@ it('schedules from Screening atomically and records the interview and acting Sta
   const profile = await applications.readProfile(id);
   expect(profile.stage).toBe('Interview');
   expect(profile.stageDates.Interview).toBeInstanceOf(Date);
-  expect(profile.interviews).toEqual([{ ...interview, id: expect.any(Number), startsAt: new Date(interview.startsAt), endsAt: new Date(interview.endsAt) }]);
+  expect(profile.interviews).toEqual([{ ...interview, id: expect.any(Number), startsAt: new Date(interview.startsAt), endsAt: new Date(interview.endsAt), score: null, result: null }]);
   expect(profile.activity).toMatchObject([{ actorName: staff.name, interviewId: profile.interviews[0].id, fromStage: 'Screening', toStage: 'Interview' }]);
   await applications.scheduleInterview(id, 'Interview', { ...interview, type: 'In person', location: 'Office' });
   const again = await applications.readProfile(id);
@@ -601,4 +601,38 @@ it("rechecks Module access for every note write and profile read", async () => {
   portal.endSession(handle);
   await expect(applications.addNote(id, "Another note")).rejects.toMatchObject({ reason: "invalid" });
   await expect(applications.readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
+});
+
+
+it("returns interview history newest first with private scores and results", async () => {
+  const id = await seed(1, "Interview");
+  const other = await seed(2, "Interview");
+  const applications = applicationsFor(handle, db);
+  await applications.scheduleInterview(id, "Interview", interview);
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2026-11-05T09:00:00+08:00", endsAt: "2026-11-05T10:00:00+08:00" });
+  await applications.scheduleInterview(id, "Interview", interview);
+  await db.query("UPDATE hrms_application_interviews SET score = 4, result = 'Passed' WHERE application_id = $1 AND starts_at = $2", [id, interview.startsAt]);
+  const profile = await applications.readProfile(id);
+  expect(profile.interviews.map(({ startsAt, score, result }) => [startsAt.toISOString(), score, result])).toEqual([
+    ["2026-11-05T01:00:00.000Z", null, null], ["2026-11-03T01:00:00.000Z", 4, "Passed"], ["2026-11-03T01:00:00.000Z", 4, "Passed"],
+  ]);
+  expect(profile.interviews[1].id).toBeGreaterThan(profile.interviews[2].id);
+  expect((await applications.readProfile(other)).interviews).toEqual([]);
+});
+
+it("uses the next upcoming interview for Next step, CSV and the tracker, then awaits its result", async () => {
+  const id = await seed(1, "Interview");
+  const applications = applicationsFor(handle, db);
+  // Far-future dates keep the real database clock in use without mocking internals.
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2099-11-05T09:00:00+08:00", endsAt: "2099-11-05T10:00:00+08:00" });
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2099-11-03T09:00:00+08:00", endsAt: "2099-11-03T10:00:00+08:00" });
+  await applications.scheduleInterview(id, "Interview", { ...interview, startsAt: "2020-11-03T09:00:00+08:00", endsAt: "2020-11-03T10:00:00+08:00" });
+  expect((await applications.list()).rows[0].nextStep).toBe("Interview · Nov 3, 2099, 9:00 AM");
+  expect(await applications.exportCsv()).toContain('"Interview · Nov 3, 2099, 9:00 AM"');
+  expect((await applications.readProfile(id)).stageDates.Interview).toEqual(new Date("2099-11-03T01:00:00Z"));
+  await db.query("UPDATE hrms_application_interviews SET starts_at = starts_at - interval '100 years', ends_at = ends_at - interval '100 years' WHERE starts_at > CURRENT_TIMESTAMP");
+  expect((await applications.list()).rows[0].nextStep).toBe("Awaiting result");
+  expect((await applications.readProfile(id)).stageDates.Interview).toEqual(new Date("2020-11-03T01:00:00Z"));
+  await applications.moveStage(id, "Interview", "Offer");
+  expect((await applications.list()).rows[0].nextStep).toBe("Awaiting offer decision");
 });
