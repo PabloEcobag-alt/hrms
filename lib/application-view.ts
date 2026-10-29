@@ -188,6 +188,12 @@ export function interviewRow(interview: ApplicationInterview): InterviewRow {
   };
 }
 
+/** Labels for scores 1 to 5, in order, as the Interview result dialog words them: "4 / 5 · Strong". */
+export const SCORE_LABELS = ["Poor", "Fair", "Good", "Strong", "Outstanding"];
+
+/** A result can be recorded once the interview has started, and only once. */
+export const canRecordResult = (interview: ApplicationInterview, now: Date) => interview.result === null && interview.startsAt <= now;
+
 export type InterviewForm = { type: InterviewInput["type"]; date: string; start: string; end: string; interviewer: string; meetingLink: string; location: string; mapLink: string };
 export type InterviewFormErrors = Partial<Record<"date" | "start" | "end" | "interviewer" | "place", string>>;
 
