@@ -27,6 +27,7 @@
     "@radix-ui/react-toggle": "^1.2.1",
     "@radix-ui/react-toggle-group": "^1.2.1",
     "@radix-ui/react-tooltip": "^1.4.1",
+    "@vercel/blob": "^2.8.2",
     "@vercel/functions": "3.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -51,6 +52,7 @@
     "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "undici": "^6.29.1",
     "vitest": "^5.0.5"
   }
 }
