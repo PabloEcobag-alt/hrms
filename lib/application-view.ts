@@ -15,6 +15,18 @@ export function canReject(stage: ApplicationStage): boolean {
   return !(["Hired", "Rejected", "Withdrawn"] as ApplicationStage[]).includes(stage);
 }
 
+/** The forward buttons a Stage offers, in display order. Offer and later offer none: Hired is reached elsewhere. */
+export type StageAction = { kind: "move"; label: string; to: ApplicationStage } | { kind: "schedule"; label: string };
+
+export function stageActions(stage: ApplicationStage): StageAction[] {
+  switch (stage) {
+    case "New": return [{ kind: "move", label: "Move to Screening", to: "Screening" }];
+    case "Screening": return [{ kind: "schedule", label: "Schedule interview" }];
+    case "Interview": return [{ kind: "schedule", label: "Schedule interview" }, { kind: "move", label: "Move to Offer", to: "Offer" }];
+    default: return [];
+  }
+}
+
 /** A missing, malformed or non-positive page in the URL means the first page. */
 export function pageFromParam(value: string | undefined): number {
   const page = Number(value);
