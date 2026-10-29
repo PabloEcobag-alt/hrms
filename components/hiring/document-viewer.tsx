@@ -15,8 +15,8 @@ export function DocumentViewer({ name, contentType, url, applicantName, children
   const frame = useRef<HTMLIFrameElement>(null);
   const print = () => {
     try {
-      // The frame is cross-origin once the Document route redirects to file-storage; the browser's own viewer prints it instead.
-      if (!frame.current?.contentWindow) throw new Error("no frame");
+      if (!frame.current?.contentWindow) throw new Error("nothing to print in place");
+      // Once the Document route redirects to file-storage the frame is cross-origin and print() throws; the browser's own viewer prints it instead.
       frame.current.contentWindow.print();
     } catch {
       window.open(url, "_blank");

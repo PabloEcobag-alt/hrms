@@ -76,3 +76,11 @@ it("offers only a download for a file the browser cannot display", () => {
   expect(screen.queryByRole("button", { name: "Open letter.docx" })).toBeNull();
   expect(screen.getByRole("link", { name: "Download letter.docx" })).toBeTruthy();
 });
+
+it("opens an image in a new tab to print it", async () => {
+  open([submitted(8, "id.png", "image/png")]);
+  await userEvent.click(screen.getByRole("button", { name: "Open id.png" }));
+  const opened = vi.spyOn(window, "open").mockReturnValue(null);
+  await userEvent.click(screen.getByRole("button", { name: "Print" }));
+  expect(opened).toHaveBeenCalledWith("/api/applications/5/documents/8", "_blank");
+});
