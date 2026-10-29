@@ -122,3 +122,13 @@ export function CardTitle({ children, aside }: { children: React.ReactNode; asid
     </div>
   );
 }
+
+/** The profile's two columns: the main cards, and a 380px column beside them on wide screens. */
+export function ProfileColumns({ main, aside }: { main: React.ReactNode; aside: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-start gap-[16px] lg:flex-row">
+      <div className="flex w-full min-w-0 flex-1 flex-col gap-[16px]">{main}</div>
+      <div className="flex w-full shrink-0 flex-col gap-[16px] lg:w-[380px]">{aside}</div>
+    </div>
+  );
+}

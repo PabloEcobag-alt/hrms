@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProfileColumns } from "@/components/hiring/parts";
 
 export function ProfileSkeleton() {
   return (
@@ -9,7 +10,7 @@ export function ProfileSkeleton() {
         <Skeleton className="h-4 w-96 max-w-full" />
       </div>
       <Skeleton className="h-[68px] w-full rounded-xl" />
-      <Skeleton className="h-[200px] w-full rounded-xl" />
+      <ProfileColumns main={<Skeleton className="h-[200px] w-full rounded-xl" />} aside={<Skeleton className="h-[200px] w-full rounded-xl" />} />
       <span className="sr-only">Loading…</span>
     </div>
   );

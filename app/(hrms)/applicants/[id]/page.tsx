@@ -4,11 +4,12 @@ import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { BackLink, CardTitle, PAGE, PageHeader } from "@/components/hiring/parts";
+import { BackLink, CardTitle, PAGE, PageHeader, ProfileColumns } from "@/components/hiring/parts";
 import { ApplicationError, type ApplicationProfile } from "@/lib/applications";
 import { STAGE_BADGE, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
+import { ApplicationActivity } from "@/components/hiring/application-activity";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import { ProfileSkeleton } from "./profile-skeleton";
 
@@ -86,7 +87,7 @@ async function Profile({ id }: { id: number }) {
         badge={<Badge variant={STAGE_BADGE[profile.stage]}>{profile.stage}</Badge>}
       />
       <Tracker profile={profile} />
-      <ApplicationDetails profile={profile} />
+      <ProfileColumns main={<ApplicationDetails profile={profile} />} aside={<ApplicationActivity profile={profile} />} />
     </>
   );
 }

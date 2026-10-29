@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -112,5 +112,46 @@ describe("application profile view", () => {
     expect(formatFileSize(1.2 * 1024 * 1024)).toBe("1.2 MB");
     expect(formatFileSize(1024 * 1024)).toBe("1 MB");
     expect(formatFileSize(0)).toBe("0 B");
+  });
+
+  describe("activity timeline", () => {
+    const base = { jobPostingTitle: "Branch Cashier", appliedAt: dates.New };
+    const interview = { id: 7, startsAt: dates.Interview, endsAt: new Date("2026-10-30T02:45:00Z"), type: "In person" as const, interviewerName: "Paolo Garcia", location: "Cainta branch", score: 4, result: "Passed" as const };
+    const event = (over: object) => ({ id: 1, fromStage: "New", toStage: "Screening", actorName: "Liza Bautista", reason: null, occurredAt: dates.Screening, ...over }) as never;
+
+    it("holds only the application entry when nothing has happened", () => {
+      expect(activityEntries({ ...base, interviews: [], activity: [] })).toEqual([{ tone: "purple", title: "Applied", detail: "20 Oct · Branch Cashier" }]);
+    });
+
+    it("reads Stage moves with who did them, and ends with the application", () => {
+      expect(activityEntries({ ...base, interviews: [], activity: [event({ id: 2, fromStage: "Screening", toStage: "Offer", occurredAt: dates.Interview }), event({})] }).map((entry) => [entry.tone, entry.title, entry.detail])).toEqual([
+        ["blue", "Moved to Offer", "30 Oct · by Liza Bautista"],
+        ["blue", "Moved to Screening", "23 Oct · by Liza Bautista"],
+        ["purple", "Applied", "20 Oct · Branch Cashier"],
+      ]);
+    });
+
+    it("shows scheduling, with the move it caused, and the recorded result", () => {
+      const entries = activityEntries({ ...base, interviews: [interview], activity: [
+        event({ id: 3, fromStage: "Interview", toStage: "Interview", interviewId: 7, reason: "Interview result: Passed (score: 4/5)", occurredAt: dates.Interview }),
+        event({ id: 2, fromStage: "Screening", toStage: "Interview", interviewId: 7, occurredAt: dates.Screening }),
+      ] });
+      expect(entries.map((entry) => [entry.tone, entry.title, entry.detail])).toEqual([
+        ["green", "In person interview completed", "30 Oct · Passed · score 4 / 5 · by Liza Bautista"],
+        ["purple", "Interview scheduled", "23 Oct · 30 Oct, 10:00 AM at Cainta branch · by Liza Bautista"],
+        ["blue", "Moved to Interview", "23 Oct · by Liza Bautista"],
+        ["purple", "Applied", "20 Oct · Branch Cashier"],
+      ]);
+    });
+
+    it("schedules another interview without a second move", () => {
+      expect(activityEntries({ ...base, interviews: [interview], activity: [event({ fromStage: "Interview", toStage: "Interview", interviewId: 7 })] }).map((entry) => entry.title))
+        .toEqual(["Interview scheduled", "Applied"]);
+    });
+
+    it("shows a rejection in red with its reason", () => {
+      expect(activityEntries({ ...base, interviews: [], activity: [event({ toStage: "Rejected", reason: "Not a fit" })] })[0])
+        .toEqual({ tone: "red", title: "Rejected", detail: "23 Oct · by Liza Bautista · Not a fit" });
+    });
   });
 });

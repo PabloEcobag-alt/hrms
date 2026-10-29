@@ -1,4 +1,4 @@
-import type { ApplicationStage, ApplicationTab } from "./applications";
+import type { ApplicationProfile, ApplicationStage, ApplicationTab } from "./applications";
 
 export const STAGE_BADGE = {
   New: "info",
@@ -81,6 +81,9 @@ const TRACKER_LABEL: Record<(typeof TRACKER_STAGES)[number], string> = { New: "A
 
 const manila = (date: Date, options: Intl.DateTimeFormatOptions) => date.toLocaleString("en-GB", { timeZone: "Asia/Manila", ...options });
 
+/** "30 Oct, 10:00 AM" in Manila time. */
+const dayTime = (date: Date) => `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`;
+
 /**
  * The five tracker steps. Reached steps are done and the current Stage is marked; later steps are empty with no date.
  * A Rejected or Withdrawn Application has no current step: the steps it reached stay done.
@@ -94,7 +97,7 @@ export function trackerSteps(stage: ApplicationStage, stageDates: Partial<Record
       label: TRACKER_LABEL[step],
       state: !reached ? "upcoming" : index === at && step !== "Hired" ? "current" : "done",
       date: !reached || !date ? "—"
-        : step === "Interview" ? `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`
+        : step === "Interview" ? dayTime(date)
         : manila(date, { day: "numeric", month: "short" }),
     };
   });
@@ -122,4 +125,31 @@ export function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${Number((bytes / (1024 * 1024)).toFixed(1))} MB`;
+}
+
+export type ActivityEntry = { tone: "purple" | "blue" | "green" | "red"; title: string; detail: string };
+
+/**
+ * The timeline, newest first, ending with the application itself. Scheduling an interview from Screening is one
+ * stored event that reads as two entries: the interview, then the Stage move it caused.
+ */
+export function activityEntries({ activity, interviews, jobPostingTitle, appliedAt }: Pick<ApplicationProfile, "activity" | "interviews" | "jobPostingTitle" | "appliedAt">): ActivityEntry[] {
+  const day = (date: Date) => manila(date, { day: "numeric", month: "short" });
+  const entries = activity.flatMap((event): ActivityEntry[] => {
+    const by = `by ${event.actorName}`;
+    const interview = interviews.find((item) => item.id === event.interviewId);
+    const moved: ActivityEntry = event.toStage === "Rejected"
+      ? { tone: "red", title: "Rejected", detail: [day(event.occurredAt), by, event.reason].filter(Boolean).join(" · ") }
+      : { tone: "blue", title: `Moved to ${event.toStage}`, detail: `${day(event.occurredAt)} · ${by}` };
+    if (event.interviewId === undefined) return [moved];
+    if (event.reason) {
+      const score = interview?.score == null ? null : `score ${interview.score} / 5`;
+      return [{ tone: "green", title: `${interview?.type ?? ""} interview completed`.trim().replace(/^./, (c) => c.toUpperCase()),
+        detail: [day(event.occurredAt), interview?.result, score, by].filter(Boolean).join(" · ") }];
+    }
+    const when = interview ? `${dayTime(interview.startsAt)} at ${interview.location}` : null;
+    const scheduled: ActivityEntry = { tone: "purple", title: "Interview scheduled", detail: [day(event.occurredAt), when, by].filter(Boolean).join(" · ") };
+    return event.fromStage === event.toStage ? [scheduled] : [scheduled, moved];
+  });
+  return [...entries, { tone: "purple", title: "Applied", detail: `${day(appliedAt)} · ${jobPostingTitle}` }];
 }
