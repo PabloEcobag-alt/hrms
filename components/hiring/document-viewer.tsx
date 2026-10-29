@@ -95,7 +95,7 @@ function ViewerBody({ name, contentType, url, applicantName, size, requiredFor, 
       <div className="flex min-h-0 flex-1 flex-col gap-[20px] overflow-y-auto px-[20px] pb-[20px] lg:flex-row lg:overflow-visible">
         <div className="flex min-h-[60vh] min-w-0 flex-1 items-center justify-center lg:min-h-0">
           {!previewable
-            ? <Notice title="Can't preview this file" detail="Word documents can't be shown here. Download it to open it." />
+            ? <Notice title="Can't preview this file" detail="This type of file can't be shown here. Download it to open it." />
             : unreachable
               ? <Notice title="Can't open this file right now" detail="Try again in a moment, or download it instead." action={<button type="button" onClick={retry} className="cursor-pointer rounded-lg bg-[#5b2a86] px-[14px] py-[9px] text-sm font-medium text-white focus-visible:ring-2 focus-visible:ring-ring">Try again</button>} />
               : contentType === "application/pdf"

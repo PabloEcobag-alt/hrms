@@ -40,6 +40,10 @@ _Avoid_: Status (in the HRMS UI), step
 A document an Applicant must upload to apply for a Job Posting. Staff tick from Resume or CV, Valid government ID and Health certificate, and can add their own, such as "NBI clearance". It is always a document; other hiring criteria are not Required Documents.
 _Avoid_: Application requirement, attachment
 
+**Document**:
+A file an Applicant attached to their profile and sent with an Application, such as a resume or a government ID. Staff open it from the Application's page. It is the file itself, whereas a Required Document is the requirement it answers.
+_Avoid_: Attachment, upload, Required Document (for the file)
+
 **Job Template**:
 A saved, reusable role definition that Staff start Job Postings from. It exists only because Staff explicitly saved it; typing a Job Posting from scratch never creates one unless Staff choose "Save as template".
 _Avoid_: Saved job, preset
