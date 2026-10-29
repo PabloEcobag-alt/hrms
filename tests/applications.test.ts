@@ -288,7 +288,7 @@ it("rechecks Module access on each profile read", async () => {
   await expect(applications.readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
 });
 
-it.each([0, -1, 1.5, NaN, Infinity, 2_147_483_648])("validates Application id %s", async (id) => {
+it.each([0, 1.5, NaN, Infinity, 2_147_483_648])("validates Application id %s", async (id) => {
   await expect(applicationsFor(handle, db).readProfile(id)).rejects.toMatchObject({ reason: "validation" });
 });
 
@@ -465,7 +465,7 @@ it("rechecks access for every Stage write", async () => {
 it("validates Stage write inputs and reports missing Applications", async () => {
   const applications = applicationsFor(handle, db);
   await expect(applications.moveStage(123, "New", "Screening")).rejects.toMatchObject({ reason: "not-found" });
-  for (const id of [0, -1, 1.5, NaN, Infinity, 2_147_483_648]) {
+  for (const id of [0, 1.5, NaN, Infinity, 2_147_483_648]) {
     await expect(applications.moveStage(id, "New", "Screening")).rejects.toMatchObject({ reason: "validation" });
   }
   // @ts-expect-error exercise untyped boundary inputs
@@ -579,7 +579,7 @@ it.each(["", " ", "\t\n", null, 42])("refuses blank or non-text notes %j without
   expect((await applicationsFor(handle, db).readProfile(id)).notes).toEqual([]);
 });
 
-it.each([0, -1, 1.5, NaN, Infinity, 2_147_483_648])("validates the note's Application id %s", async (id) => {
+it.each([0, 1.5, NaN, Infinity, 2_147_483_648])("validates the note's Application id %s", async (id) => {
   await expect(applicationsFor(handle, db).addNote(id, "Note")).rejects.toMatchObject({ reason: "validation" });
 });
 
@@ -672,7 +672,7 @@ it("validates whole scores from 1 to 5 and the two interview results without wri
     // @ts-expect-error exercise untyped boundary inputs
     await expect(applications.recordInterviewResult(id, interviewId, outcome)).rejects.toMatchObject({ reason: "validation" });
   }
-  for (const invalidId of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+  for (const invalidId of [0, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     await expect(applications.recordInterviewResult(invalidId, interviewId, { score: 1, result: "Passed" })).rejects.toMatchObject({ reason: "validation" });
     await expect(applications.recordInterviewResult(id, invalidId, { score: 1, result: "Passed" })).rejects.toMatchObject({ reason: "validation" });
   }
@@ -787,4 +787,67 @@ it.each(["denied", "invalid", "unavailable"] as const)("adding an applicant fail
   portal.unavailable = reason === "unavailable";
   await db.close();
   await expect(applicationsFor(restricted, db).addApplicant(manual)).rejects.toMatchObject({ reason });
+});
+
+it("opens an HR-added applicant's profile with the added details and every Required Document Requested", async () => {
+  await seed(1);
+  await db.query(`UPDATE job_postings SET required_documents = '["Resume or CV","NBI clearance"]' WHERE id = 'posting-1'`);
+  const applications = applicationsFor(handle, db);
+  const id = await applications.addApplicant(manual);
+  expect(await applications.readProfile(id)).toMatchObject({
+    id, applicantName: "Walk In", applicantEmail: "walk@example.test", mobile: "0917", address: "Manila",
+    expectedSalary: 25000, availableFrom: "2026-11-15", jobPostingId: "posting-1", jobPostingTitle: "Cashier",
+    stage: "New", notes: [], interviews: [], activity: [],
+    documents: [{ requiredFor: "Resume or CV", status: "Requested" }, { requiredFor: "NBI clearance", status: "Requested" }],
+  });
+});
+
+it("moves an HR-added applicant through Stages, records activity and sends no notification", async () => {
+  await seed(1);
+  const applications = applicationsFor(handle, db);
+  const id = await applications.addApplicant(manual);
+  await applications.moveStage(id, "New", "Screening");
+  await applications.moveStage(id, "Screening", "Interview");
+  await expect(applications.moveStage(id, "New", "Screening")).rejects.toMatchObject({ reason: "conflict" });
+  expect(await applications.readProfile(id)).toMatchObject({ stage: "Interview",
+    activity: [{ fromStage: "Screening", toStage: "Interview", actorName: "Ada Okafor" }, { fromStage: "New", toStage: "Screening" }] });
+  expect((await applications.list({ stage: "Interview" })).rows).toMatchObject([{ id }]);
+  await applications.moveStage(id, "Interview", "Rejected", "Not a fit");
+  expect(await applications.readProfile(id)).toMatchObject({ stage: "Rejected", activity: [{ toStage: "Rejected", reason: "Not a fit" }, {}, {}] });
+  expect((await db.query("SELECT * FROM hrms_application_notifications")).rows).toHaveLength(0);
+});
+
+it("adds notes, schedules an interview and records its result for an HR-added applicant", async () => {
+  await seed(1);
+  const applications = applicationsFor(handle, db);
+  const id = await applications.addApplicant(manual);
+  await applications.addNote(id, " Referred by Ben ");
+  await applications.moveStage(id, "New", "Screening");
+  await applications.scheduleInterview(id, "Screening", { startsAt: "2026-01-05T01:00:00Z", endsAt: "2026-01-05T02:00:00Z", type: "Online", interviewerName: "Ben", location: "Zoom" });
+  const [{ id: interviewId }] = (await applications.readProfile(id)).interviews;
+  await applications.recordInterviewResult(id, interviewId, { score: 4, result: "Passed" });
+  expect(await applications.readProfile(id)).toMatchObject({ stage: "Interview",
+    notes: [{ text: "Referred by Ben", authorName: "Ada Okafor" }],
+    interviews: [{ interviewerName: "Ben", score: 4, result: "Passed" }],
+    activity: [{ reason: "Interview result: Passed (score: 4/5)" }, { toStage: "Interview" }, { toStage: "Screening" }] });
+  expect((await db.query("SELECT * FROM hrms_application_notifications")).rows).toHaveLength(0);
+});
+
+it("still rejects unknown and zero ids for profile, notes and moves", async () => {
+  const applications = applicationsFor(handle, db);
+  await expect(applications.readProfile(-99)).rejects.toMatchObject({ reason: "not-found" });
+  await expect(applications.addNote(-99, "x")).rejects.toMatchObject({ reason: "not-found" });
+  await expect(applications.moveStage(-99, "New", "Screening")).rejects.toMatchObject({ reason: "not-found" });
+  await expect(applications.readProfile(0)).rejects.toMatchObject({ reason: "validation" });
+});
+
+it("rejects an HR-added applicant straight from New with activity and no notification", async () => {
+  await seed(1);
+  const applications = applicationsFor(handle, db);
+  const id = await applications.addApplicant(manual);
+  await applications.moveStage(id, "New", "Rejected", "No vacancy");
+  expect(await applications.readProfile(id)).toMatchObject({ stage: "Rejected",
+    activity: [{ fromStage: "New", toStage: "Rejected", reason: "No vacancy", actorName: "Ada Okafor" }] });
+  expect((await applications.list({ stage: "Rejected" })).rows).toMatchObject([{ id }]);
+  expect((await db.query("SELECT * FROM hrms_application_notifications")).rows).toHaveLength(0);
 });

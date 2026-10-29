@@ -62,6 +62,9 @@ const nextSteps: Record<ApplicationStage, string> = {
   Withdrawn: "Withdrawn by applicant",
 };
 
+// Careers ids are positive; HR-added Applications count down from -1.
+const validId = (id: unknown) => Number.isInteger(id) && id !== 0 && Math.abs(id as number) <= 2_147_483_647;
+
 /** Server-side boundary. Recheck the Portal on every operation, including repeated reads. */
 export function applicationsFor(sessionHandle: string | undefined, db: Database = database) {
   async function read({ page = 1, stage = "All", search = "", jobPostingId }: ApplicationFilters & { page?: number } = {}, paginated = true): Promise<ApplicationPage> {
@@ -129,10 +132,16 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       // One statement is one transaction: a failed history/activity insert rolls back the status.
       // PostgreSQL rechecks this status predicate after waiting for a concurrent writer.
       const { rows } = await db.query<{ moved: boolean; exists: boolean }>(`
-        WITH moved AS (
+        WITH moved_careers AS (
           UPDATE public.applications SET status = $3, updated_at = statement_timestamp()
           WHERE id = $1 AND status = $2
           RETURNING id, applicant_id, updated_at
+        ), moved_manual AS (
+          UPDATE public.hrms_manual_applications SET status = $3, updated_at = statement_timestamp()
+          WHERE id = $1 AND status = $4
+          RETURNING id, NULL::text AS applicant_id, updated_at
+        ), moved AS (
+          SELECT * FROM moved_careers UNION ALL SELECT * FROM moved_manual
         ), interview AS (
           INSERT INTO public.hrms_application_interviews
             (application_id, starts_at, ends_at, type, interviewer_name, location)
@@ -151,6 +160,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
               ELSE 'Your Application has moved to ' || $3 || '.' END,
             'idempotencyKey', 'application.stage:' || m.id || ':' || $3)
           FROM moved m WHERE $2 <> $3 AND $3 IN ('Interview', 'Offer', 'Hired', 'Rejected')
+            AND m.applicant_id IS NOT NULL
             AND EXISTS (SELECT 1 FROM neon_auth."user" u WHERE u.id::text = m.applicant_id)
           ON CONFLICT (id) DO NOTHING
         ), activity AS (
@@ -159,7 +169,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
           SELECT id, $4, $3, $5, $6, updated_at, (SELECT id FROM interview) FROM moved
         )
         SELECT EXISTS(SELECT 1 FROM moved) AS moved,
-          EXISTS(SELECT 1 FROM public.applications WHERE id = $1) AS exists`,
+          EXISTS(SELECT 1 FROM public.hrms_all_applications WHERE id = $1) AS exists`,
       [id, fromStage === "New" ? "Received" : fromStage, toStage, fromStage, actorName, reason ?? null, interview?.startsAt ?? null, interview?.endsAt ?? null, interview?.type ?? null, interview?.interviewerName.trim() ?? null, interview?.location.trim() ?? null]);
       if (!rows[0].moved) throw new ApplicationError(rows[0].exists ? "conflict" : "not-found");
   }
@@ -204,11 +214,11 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
     async addNote(id: number, text: string): Promise<void> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
-      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+      if (!validId(id)
         || typeof text !== "string" || text.trim() === "") throw new ApplicationError("validation");
       const { rows } = await db.query<{ id: number }>(`
         INSERT INTO public.hrms_application_notes (application_id, text, author_name)
-        SELECT id, $2, $3 FROM public.applications WHERE id = $1
+        SELECT id, $2, $3 FROM public.hrms_all_applications WHERE id = $1
         RETURNING id`, [id, text.trim(), access.staff.name]);
       if (!rows[0]) throw new ApplicationError("not-found");
     },
@@ -219,7 +229,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       const forward: Partial<Record<ApplicationStage, ApplicationStage>> = {
         New: "Screening", Screening: "Interview", Interview: "Offer", Offer: "Hired",
       };
-      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+      if (!validId(id)
         || !Object.hasOwn(forward, fromStage)
         || (toStage !== "Rejected" && forward[fromStage] !== toStage)
         || (reason !== undefined && (typeof reason !== "string" || toStage !== "Rejected"))) {
@@ -231,7 +241,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
       const timestamp = (value: unknown) => typeof value === "string" && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
-      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+      if (!validId(id)
         || !["Screening", "Interview"].includes(fromStage) || !interview
         || !timestamp(interview.startsAt) || !timestamp(interview.endsAt)
         || Date.parse(interview.endsAt) <= Date.parse(interview.startsAt)
@@ -243,7 +253,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
     async recordInterviewResult(id: number, interviewId: number, outcome: { score: number; result: "Passed" | "Not passed" }): Promise<void> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
-      if (![id, interviewId].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647)
+      if (!validId(id) || !(Number.isSafeInteger(interviewId) && interviewId > 0 && interviewId <= 2_147_483_647)
         || !outcome || !Number.isInteger(outcome.score) || outcome.score < 1 || outcome.score > 5
         || !["Passed", "Not passed"].includes(outcome.result)) throw new ApplicationError("validation");
       // Keep the private result and its Staff activity in the same atomic statement.
@@ -256,9 +266,8 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         ), activity AS (
           INSERT INTO public.hrms_application_activity
             (application_id, from_stage, to_stage, actor_name, reason, interview_id, occurred_at)
-          SELECT a.id, CASE WHEN a.status = 'Received' THEN 'New' ELSE a.status END,
-            CASE WHEN a.status = 'Received' THEN 'New' ELSE a.status END, $5, $6, r.id, statement_timestamp()
-          FROM recorded r JOIN public.applications a ON a.id = r.application_id
+          SELECT a.id, a.stage, a.stage, $5, $6, r.id, statement_timestamp()
+          FROM recorded r JOIN public.hrms_all_applications a ON a.id = r.application_id
         )
         SELECT EXISTS(SELECT 1 FROM recorded) AS recorded,
           EXISTS(SELECT 1 FROM public.hrms_application_interviews WHERE application_id = $1 AND id = $2) AS exists`,
@@ -302,7 +311,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
     async readProfile(id: number): Promise<ApplicationProfile> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
-      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
+      if (!validId(id)) throw new ApplicationError("validation");
       // Careers snapshots use phone/location. Older snapshots omit email and the
       // optional salary/availability fields; only email has a legacy identity fallback.
       const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "notes" | "stageDates" | "activity" | "interviews"> & { interviews: (Omit<ApplicationInterview, "startsAt" | "endsAt"> & { startsAt: string; endsAt: string })[]; stage_dates: Partial<Record<ApplicationStage, string>>; activity: (Omit<ApplicationActivity, "occurredAt"> & { occurredAt: string })[]; documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
@@ -326,17 +335,27 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
             'id', e.id, 'fromStage', e.from_stage, 'toStage', e.to_stage,
             'actorName', e.actor_name, 'reason', e.reason, 'occurredAt', e.occurred_at
           ) || CASE WHEN e.interview_id IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('interviewId', e.interview_id) END ORDER BY e.occurred_at DESC, e.id DESC)
-            FROM public.hrms_application_activity e WHERE e.application_id = a.id), '[]'::jsonb) AS activity, a.profile_snapshot->>'fullName' AS "applicantName",
-          COALESCE(a.profile_snapshot->>'email', p.email) AS "applicantEmail",
-          a.profile_snapshot->>'phone' AS mobile,
-          a.profile_snapshot->>'location' AS address,
-          (a.profile_snapshot->>'expectedSalary')::double precision AS "expectedSalary",
-          a.profile_snapshot->>'availableFrom' AS "availableFrom",
+            FROM public.hrms_application_activity e WHERE e.application_id = a.id), '[]'::jsonb) AS activity, a.full_name AS "applicantName",
+          a.email AS "applicantEmail", a.mobile, a.address,
+          a.expected_salary AS "expectedSalary", a.available_from AS "availableFrom",
           a.job_posting_id AS "jobPostingId", j.title AS "jobPostingTitle", j.location,
-          a.created_at AS "appliedAt",
-          CASE WHEN a.status = 'Received' THEN 'New' ELSE a.status END AS stage
-        FROM public.applications a
-        LEFT JOIN public.applicant_profiles p ON p.applicant_id = a.applicant_id
+          a.created_at AS "appliedAt", a.stage
+        FROM (
+          SELECT c.id, c.documents_snapshot, c.job_posting_id, c.created_at,
+            CASE WHEN c.status = 'Received' THEN 'New' ELSE c.status END AS stage,
+            c.profile_snapshot->>'fullName' AS full_name,
+            COALESCE(c.profile_snapshot->>'email', p.email) AS email,
+            c.profile_snapshot->>'phone' AS mobile,
+            c.profile_snapshot->>'location' AS address,
+            (c.profile_snapshot->>'expectedSalary')::double precision AS expected_salary,
+            c.profile_snapshot->>'availableFrom' AS available_from
+          FROM public.applications c
+          LEFT JOIN public.applicant_profiles p ON p.applicant_id = c.applicant_id
+          UNION ALL
+          SELECT m.id, '[]'::jsonb, m.job_posting_id, m.applied_at, m.status, m.full_name, m.email,
+            m.mobile, m.address, m.expected_salary, m.available_from::text
+          FROM public.hrms_manual_applications m
+        ) a
         JOIN public.job_postings j ON j.id = a.job_posting_id
         WHERE a.id = $1`, [id]);
       if (!rows[0]) throw new ApplicationError("not-found");
