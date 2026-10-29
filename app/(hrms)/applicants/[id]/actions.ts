@@ -119,3 +119,29 @@ export async function scheduleInterview(applicationId: number, fromStage: Applic
   revalidatePath("/applicants");
   return { scheduled: (previous.scheduled ?? 0) + 1 };
 }
+
+export type ResultState = { error?: string; recorded?: number };
+
+const RESULT_MESSAGES: Record<ApplicationError["reason"], string> = {
+  validation: "Choose a result and a score from 1 to 5.",
+  "not-found": "This interview no longer exists.",
+  conflict: "A result can only be recorded once the interview has started.",
+  unavailable: "HRMS could not reach the Portal or database. Please try again in a moment.",
+  invalid: "",
+  denied: "",
+};
+
+/** Records the score and result of an interview that has already started. */
+export async function recordInterviewResult(applicationId: number, interviewId: number, previous: ResultState, data: FormData): Promise<ResultState> {
+  const result = data.get("result");
+  try {
+    await (await applicationsForRequest()).recordInterviewResult(applicationId, interviewId, { score: Number(data.get("score")), result: result as "Passed" | "Not passed" });
+  } catch (error) {
+    if (!(error instanceof ApplicationError)) throw error;
+    if (error.reason === "denied") redirect(NO_ACCESS_PATH);
+    if (error.reason === "invalid") redirect(LOGIN_PATH);
+    return { error: RESULT_MESSAGES[error.reason] };
+  }
+  revalidatePath(`/applicants/${applicationId}`);
+  return { recorded: (previous.recorded ?? 0) + 1 };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReject, interviewRow, readInterviewForm, type InterviewForm, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { canRecordResult, SCORE_LABELS, canReject, interviewRow, readInterviewForm, type InterviewForm, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -212,6 +212,17 @@ describe("interview rows", () => {
 
   it("reads a recorded result as Completed with its score", () => {
     expect(interviewRow({ ...base, score: 4, result: "Passed" })).toMatchObject({ score: "4 / 5", status: "Completed" });
+  });
+
+  it("offers a result only once the interview has started and has none", () => {
+    const at = new Date("2026-10-30T02:00:00Z");
+    expect(canRecordResult(base, new Date(at.getTime() - 1))).toBe(false);
+    expect(canRecordResult(base, at)).toBe(true);
+    expect(canRecordResult({ ...base, score: 4, result: "Passed" }, at)).toBe(false);
+  });
+
+  it("labels each score from 1 to 5", () => {
+    expect(SCORE_LABELS).toEqual(["Poor", "Fair", "Good", "Strong", "Outstanding"]);
   });
 
   it("shows an Online interview as just Online", () => {

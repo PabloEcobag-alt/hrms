@@ -94,7 +94,7 @@ async function Profile({ id }: { id: number }) {
         <StageActions applicationId={id} stage={profile.stage} applicantName={profile.applicantName} jobTitle={profile.jobPostingTitle} location={profile.location} />
       </PageHeader>
       <Tracker profile={profile} />
-      <ProfileColumns main={<><ApplicationDetails profile={profile} /><ApplicationInterviews interviews={profile.interviews} /></>} aside={<><ApplicationActivity profile={profile} /><ApplicationNotes applicationId={id} notes={profile.notes} /></>} />
+      <ProfileColumns main={<><ApplicationDetails profile={profile} /><ApplicationInterviews applicationId={id} applicantName={profile.applicantName} jobTitle={profile.jobPostingTitle} interviews={profile.interviews} /></>} aside={<><ApplicationActivity profile={profile} /><ApplicationNotes applicationId={id} notes={profile.notes} /></>} />
     </>
   );
 }
