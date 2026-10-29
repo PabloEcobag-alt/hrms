@@ -85,7 +85,7 @@ export async function moveApplication(applicationId: number, fromStage: Applicat
   return {};
 }
 
-export type ScheduleState = { error?: string; fieldErrors?: InterviewFormErrors; scheduled?: number };
+export type ScheduleState = { error?: string; fieldErrors?: InterviewFormErrors; scheduled?: number; values?: Record<string, string> };
 
 const SCHEDULE_MESSAGES: Record<ApplicationError["reason"], string> = {
   validation: "Check the interview details and try again.",
@@ -99,19 +99,21 @@ const SCHEDULE_MESSAGES: Record<ApplicationError["reason"], string> = {
 /** Schedules an interview from the Stage the reviewer saw, moving the Application to Interview. */
 export async function scheduleInterview(applicationId: number, fromStage: ApplicationStage, previous: ScheduleState, data: FormData): Promise<ScheduleState> {
   const field = (name: string) => (data.get(name) as string | null) ?? "";
+  // Sent back so the form keeps what was typed when React resets it after the action.
+  const values = Object.fromEntries(["date", "start", "end", "interviewer", "meetingLink", "location", "mapLink"].map((name) => [name, field(name)]));
   const { input, errors } = readInterviewForm({
     type: field("type") === "In person" ? "In person" : "Online",
     date: field("date"), start: field("start"), end: field("end"), interviewer: field("interviewer"),
     meetingLink: field("meetingLink"), location: field("location"), mapLink: field("mapLink"),
   });
-  if (!input) return { fieldErrors: errors };
+  if (!input) return { fieldErrors: errors, values };
   try {
     await (await applicationsForRequest()).scheduleInterview(applicationId, fromStage, input);
   } catch (error) {
     if (!(error instanceof ApplicationError)) throw error;
     if (error.reason === "denied") redirect(NO_ACCESS_PATH);
     if (error.reason === "invalid") redirect(LOGIN_PATH);
-    return { error: SCHEDULE_MESSAGES[error.reason] };
+    return { error: SCHEDULE_MESSAGES[error.reason], values };
   }
   revalidatePath(`/applicants/${applicationId}`);
   revalidatePath("/applicants");

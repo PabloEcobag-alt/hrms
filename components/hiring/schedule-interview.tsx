@@ -70,27 +70,27 @@ export function ScheduleInterview({ applicationId, stage, applicantName, jobTitl
             <div className="flex gap-[12px]">
               <div className="min-w-0 flex-1">
                 <Labelled label="Date" htmlFor="interview-date" required error={errors.date}>
-                  <div className={cn(BOX, border("date"))}><input id="interview-date" name="date" type="date" className={INPUT} /></div>
+                  <div className={cn(BOX, border("date"))}><input id="interview-date" name="date" defaultValue={state.values?.date} type="date" className={INPUT} /></div>
                 </Labelled>
               </div>
               <div className="min-w-0 flex-1">
                 <Labelled label="Time" htmlFor="interview-start" required error={errors.start ?? errors.end}>
                   <div className={cn(BOX, errors.start || errors.end ? "border-destructive" : "border-zinc-200")}>
-                    <input id="interview-start" name="start" type="time" aria-label="Start time" className={INPUT} />
+                    <input id="interview-start" name="start" defaultValue={state.values?.start} type="time" aria-label="Start time" className={INPUT} />
                     <span className="text-zinc-400">–</span>
-                    <input name="end" type="time" aria-label="End time" className={INPUT} />
+                    <input name="end" type="time" defaultValue={state.values?.end} aria-label="End time" className={INPUT} />
                   </div>
                 </Labelled>
               </div>
             </div>
             <Labelled label="Interviewer" htmlFor="interview-interviewer" required error={errors.interviewer}>
-              <div className={cn(BOX, border("interviewer"))}><input id="interview-interviewer" name="interviewer" placeholder="Interviewer's name" className={INPUT} /></div>
+              <div className={cn(BOX, border("interviewer"))}><input id="interview-interviewer" name="interviewer" defaultValue={state.values?.interviewer} placeholder="Interviewer's name" className={INPUT} /></div>
             </Labelled>
             {type === "Online" ? (
               <Labelled label="Meeting link" htmlFor="interview-link" required error={errors.place} hint="Paste a Google Meet or Zoom link.">
                 <div className={cn(BOX, border("place"))}>
                   <Link2 className="size-4 text-zinc-500" />
-                  <input id="interview-link" name="meetingLink" placeholder="https://meet.google.com/…" className={cn(INPUT, "text-primary")} />
+                  <input id="interview-link" name="meetingLink" defaultValue={state.values?.meetingLink} placeholder="https://meet.google.com/…" className={cn(INPUT, "text-primary")} />
                 </div>
               </Labelled>
             ) : (
@@ -98,13 +98,13 @@ export function ScheduleInterview({ applicationId, stage, applicantName, jobTitl
                 <Labelled label="Location" htmlFor="interview-location" required error={errors.place}>
                   <div className={cn(BOX, border("place"))}>
                     <MapPin className="size-4 text-zinc-500" />
-                    <input id="interview-location" name="location" placeholder="Branch and address" className={INPUT} />
+                    <input id="interview-location" name="location" defaultValue={state.values?.location} placeholder="Branch and address" className={INPUT} />
                   </div>
                 </Labelled>
                 <Labelled label="Map link" htmlFor="interview-map" hint="Optional. Share a link if they should find the place on a map.">
                   <div className={cn(BOX, "border-zinc-200")}>
                     <MapIcon className="size-4 text-zinc-500" />
-                    <input id="interview-map" name="mapLink" placeholder="https://maps.app.goo.gl/…" className={cn(INPUT, "text-primary")} />
+                    <input id="interview-map" name="mapLink" defaultValue={state.values?.mapLink} placeholder="https://maps.app.goo.gl/…" className={cn(INPUT, "text-primary")} />
                   </div>
                 </Labelled>
               </>
