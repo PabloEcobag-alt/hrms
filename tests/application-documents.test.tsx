@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import type { ApplicationDocument } from "@/lib/applications";
 
 afterEach(cleanup);
 
-const submitted = (id: number, name: string, contentType: string): ApplicationDocument => ({
-  id, name, contentType, size: 2048, uploadedAt: null, requiredFor: "Resume or CV", status: "Submitted",
+const submitted = (id: number, name: string, contentType: string, uploadedAt: Date | null = null): ApplicationDocument => ({
+  id, name, contentType, size: 2048, uploadedAt, requiredFor: "Resume or CV", status: "Submitted",
   downloadUrl: `/api/applications/5/documents/${id}`,
 });
 const open = (documents: ApplicationDocument[]) => render(<ApplicationDocuments documents={documents} applicantName="Kristine Aquino" />);
@@ -83,4 +83,28 @@ it("opens an image in a new tab to print it", async () => {
   const opened = vi.spyOn(window, "open").mockReturnValue(null);
   await userEvent.click(screen.getByRole("button", { name: "Print" }));
   expect(opened).toHaveBeenCalledWith("/api/applications/5/documents/8", "_blank");
+});
+
+it("shows File details with only the data we hold", async () => {
+  open([submitted(7, "resume.pdf", "application/pdf", new Date("2026-10-28T12:05:00Z"))]);
+  await userEvent.click(screen.getByRole("button", { name: "Open resume.pdf" }));
+  const panel = within(screen.getByRole("dialog")).getByRole("complementary", { name: "File details" });
+  const rows = Object.fromEntries([...panel.querySelectorAll("dt")].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]));
+  expect(rows).toEqual({
+    Type: "PDF document",
+    Size: "2 KB",
+    Requirement: "Resume or CV",
+    "Uploaded by": "Kristine Aquino · with application",
+    Uploaded: "28 Oct 2026, 8:05 PM",
+  });
+  expect(within(panel).getByText("Submitted")).toBeTruthy();
+  for (const absent of ["Folder", "Valid until", "Activity", "Replace"]) expect(within(panel).queryByText(absent)).toBeNull();
+});
+
+it("names an image's type and leaves the upload date out when we do not hold it", async () => {
+  open([submitted(8, "id.png", "image/png")]);
+  await userEvent.click(screen.getByRole("button", { name: "Open id.png" }));
+  const panel = within(screen.getByRole("dialog")).getByRole("complementary", { name: "File details" });
+  expect(within(panel).getByText("PNG image")).toBeTruthy();
+  expect(within(panel).queryByText("Uploaded")).toBeNull();
 });

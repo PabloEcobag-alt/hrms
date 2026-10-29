@@ -23,7 +23,7 @@ function DocumentRow({ document, applicantName }: { document: ApplicationDocumen
   return (
     <li className="flex items-center gap-[12px] rounded-lg border border-zinc-200 py-[9px] pr-[12px] pl-[9px]">
       {submitted && canView(document.contentType)
-        ? <DocumentViewer name={document.name} contentType={document.contentType} url={document.downloadUrl} applicantName={applicantName}>{summary}</DocumentViewer>
+        ? <DocumentViewer name={document.name} contentType={document.contentType} url={document.downloadUrl} applicantName={applicantName} size={document.size} requiredFor={document.requiredFor} uploadedAt={document.uploadedAt}>{summary}</DocumentViewer>
         : summary}
       {submitted
         ? (

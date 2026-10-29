@@ -144,6 +144,16 @@ export function formatFileSize(bytes: number) {
   return `${Number((bytes / (1024 * 1024)).toFixed(1))} MB`;
 }
 
+/** "PDF document" or "PNG image": what a submitted file is, for the viewer's File details. */
+export function fileTypeLabel(contentType: string) {
+  if (contentType === "application/pdf") return "PDF document";
+  if (contentType.startsWith("image/")) return `${contentType.slice(6).replace("jpeg", "jpg").toUpperCase()} image`;
+  return contentType;
+}
+
+/** "28 Oct 2026, 8:05 PM" in Manila time. */
+export const formatUploaded = (date: Date) => `${formatApplied(date)}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`;
+
 export type ActivityEntry = { tone: "purple" | "blue" | "green" | "red"; title: string; detail: string };
 
 /**
