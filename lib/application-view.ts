@@ -81,6 +81,9 @@ const TRACKER_LABEL: Record<(typeof TRACKER_STAGES)[number], string> = { New: "A
 
 const manila = (date: Date, options: Intl.DateTimeFormatOptions) => date.toLocaleString("en-GB", { timeZone: "Asia/Manila", ...options });
 
+/** "30 Oct, 10:00 AM" in Manila time. */
+const dayTime = (date: Date) => `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`;
+
 /**
  * The five tracker steps. Reached steps are done and the current Stage is marked; later steps are empty with no date.
  * A Rejected or Withdrawn Application has no current step: the steps it reached stay done.
@@ -94,7 +97,7 @@ export function trackerSteps(stage: ApplicationStage, stageDates: Partial<Record
       label: TRACKER_LABEL[step],
       state: !reached ? "upcoming" : index === at && step !== "Hired" ? "current" : "done",
       date: !reached || !date ? "—"
-        : step === "Interview" ? `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`
+        : step === "Interview" ? dayTime(date)
         : manila(date, { day: "numeric", month: "short" }),
     };
   });
@@ -144,7 +147,7 @@ export function activityEntries({ activity, interviews, jobPostingTitle, applied
       return [{ tone: "green", title: `${interview?.type ?? ""} interview completed`.trim().replace(/^./, (c) => c.toUpperCase()),
         detail: [day(event.occurredAt), interview?.result, score, by].filter(Boolean).join(" · ") }];
     }
-    const when = interview ? `${day(interview.startsAt)}, ${manila(interview.startsAt, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()} at ${interview.location}` : null;
+    const when = interview ? `${dayTime(interview.startsAt)} at ${interview.location}` : null;
     const scheduled: ActivityEntry = { tone: "purple", title: "Interview scheduled", detail: [day(event.occurredAt), when, by].filter(Boolean).join(" · ") };
     return event.fromStage === event.toStage ? [scheduled] : [scheduled, moved];
   });
