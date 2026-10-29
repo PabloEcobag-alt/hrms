@@ -147,6 +147,6 @@ ids and behave as for any Application. The profile returns the added name, email
 expected salary and availability, and every Job Posting Required Document as `Requested` (HR-added
 Applications have no submitted documents). The Stage lives in `hrms_manual_applications.status`;
 history, activity, interviews and notes use the shared HRMS tables. No Applicant notification is
-queued, since there is no Careers user. Document download still returns not-found for these ids.
+queued, since there is no Careers user. Document download rejects these ids with `validation`, as they have no submitted documents.
 Migration `0018-manual-application-workflow.sql` adds the status column and drops the foreign keys
 from those HRMS tables to Careers' `applications` so they can hold HR-added ids. Run `npm run db:migrate`.

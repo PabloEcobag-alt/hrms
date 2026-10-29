@@ -160,6 +160,7 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
               ELSE 'Your Application has moved to ' || $3 || '.' END,
             'idempotencyKey', 'application.stage:' || m.id || ':' || $3)
           FROM moved m WHERE $2 <> $3 AND $3 IN ('Interview', 'Offer', 'Hired', 'Rejected')
+            AND m.applicant_id IS NOT NULL
             AND EXISTS (SELECT 1 FROM neon_auth."user" u WHERE u.id::text = m.applicant_id)
           ON CONFLICT (id) DO NOTHING
         ), activity AS (

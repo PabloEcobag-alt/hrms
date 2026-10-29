@@ -840,3 +840,14 @@ it("still rejects unknown and zero ids for profile, notes and moves", async () =
   await expect(applications.moveStage(-99, "New", "Screening")).rejects.toMatchObject({ reason: "not-found" });
   await expect(applications.readProfile(0)).rejects.toMatchObject({ reason: "validation" });
 });
+
+it("rejects an HR-added applicant straight from New with activity and no notification", async () => {
+  await seed(1);
+  const applications = applicationsFor(handle, db);
+  const id = await applications.addApplicant(manual);
+  await applications.moveStage(id, "New", "Rejected", "No vacancy");
+  expect(await applications.readProfile(id)).toMatchObject({ stage: "Rejected",
+    activity: [{ fromStage: "New", toStage: "Rejected", reason: "No vacancy", actorName: "Ada Okafor" }] });
+  expect((await applications.list({ stage: "Rejected" })).rows).toMatchObject([{ id }]);
+  expect((await db.query("SELECT * FROM hrms_application_notifications")).rows).toHaveLength(0);
+});
