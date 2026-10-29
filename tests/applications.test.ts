@@ -242,3 +242,50 @@ it.each([{ stage: "Withdrawn" }, { search: null }, { jobPostingId: " " }])("vali
   // @ts-expect-error intentionally invalid boundary input
   await expect(applicationsFor(handle, db).exportCsv(filters)).rejects.toMatchObject({ reason: "validation" });
 });
+
+
+it("reads Application profile details from the submitted snapshot rather than the live profile", async () => {
+  const id = await seed(1, "Screening", "closed");
+  await db.query("UPDATE applications SET profile_snapshot = $1::jsonb WHERE id = $2", [JSON.stringify({
+    fullName: "Submitted Name", email: "submitted@example.test", phone: "09171234567",
+    location: "Quezon City", expectedSalary: 25000, availableFrom: "2026-11-01",
+  }), id]);
+  expect(await applicationsFor(handle, db).readProfile(id)).toEqual({
+    id, applicantName: "Submitted Name", applicantEmail: "submitted@example.test",
+    mobile: "09171234567", address: "Quezon City", expectedSalary: 25000, availableFrom: "2026-11-01",
+    jobPostingId: "posting-1", jobPostingTitle: "Cashier", location: "Manila",
+    stage: "Screening", appliedAt: new Date("2026-10-01T08:00:00Z"),
+  });
+});
+
+
+it("reads legacy snapshot fields without borrowing live profile details", async () => {
+  const id = await seed(1);
+  expect(await applicationsFor(handle, db).readProfile(id)).toMatchObject({
+    applicantName: "Applicant 1", applicantEmail: "person1@example.test", stage: "New",
+    mobile: null, address: null, expectedSalary: null, availableFrom: null,
+  });
+});
+
+it("returns not-found for an unknown Application", async () => {
+  await expect(applicationsFor(handle, db).readProfile(123)).rejects.toMatchObject({ reason: "not-found" });
+});
+
+it.each(["denied", "invalid", "unavailable"] as const)("profile read fails closed on %s before querying", async (reason) => {
+  const restrictedHandle = reason === "denied" ? portal.signIn(staff, ["Attendance"]) : reason === "invalid" ? undefined : handle;
+  portal.unavailable = reason === "unavailable";
+  await db.close();
+  await expect(applicationsFor(restrictedHandle, db).readProfile(1)).rejects.toMatchObject({ reason });
+});
+
+it("rechecks Module access on each profile read", async () => {
+  const id = await seed(1);
+  const applications = applicationsFor(handle, db);
+  await applications.readProfile(id);
+  portal.endSession(handle);
+  await expect(applications.readProfile(id)).rejects.toMatchObject({ reason: "invalid" });
+});
+
+it.each([0, -1, 1.5, NaN, Infinity, 2_147_483_648])("validates Application id %s", async (id) => {
+  await expect(applicationsFor(handle, db).readProfile(id)).rejects.toMatchObject({ reason: "validation" });
+});
