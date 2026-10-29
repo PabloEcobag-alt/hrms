@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: {
       .downloadDocument(Number(id), Number(documentId));
   } catch (error) {
     if (!(error instanceof ApplicationError)) throw error;
-    const status = { denied: 403, invalid: 401, unavailable: 503, validation: 400, "not-found": 404 }[error.reason];
+    const status = { denied: 403, invalid: 401, unavailable: 503, validation: 400, "not-found": 404, conflict: 409 }[error.reason];
     return Response.json({ error: error.reason }, { status, headers: { "Cache-Control": "private, no-store" } });
   }
 }

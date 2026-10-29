@@ -6,4 +6,4 @@ HR-ATS (the Recruitment and Hiring Module of HRMS) and the Careers site of the e
 
 - Careers' public page and HRMS now fail together if the database is unavailable, and a schema change on `job_postings` must be made with both applications in mind.
 - Notifying Applicants of a new Open Job Posting is done by HRMS at publish time, since it can read the Applicants from the same database.
-- The Application-status webhook from ADR-0005 is not changed by this decision.
+- Application workflow ownership was extended by #133 and #140: HRMS writes `applications.status` directly from `Received` onward, replacing the Application-status webhook. Stage dates and activity live in HRMS-owned `hrms_` tables; The Careers schema and submitted snapshots stay unchanged.

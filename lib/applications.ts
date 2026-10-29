@@ -18,9 +18,19 @@ type SubmittedDocument = { id: number; name: string; size: number; contentType: 
 export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
   | { requiredFor: string; status: "Requested" };
 export type ApplicationNote = { id: number; text: string; authorName: string; createdAt: Date };
+export type ApplicationActivity = {
+  id: number;
+  fromStage: ApplicationStage;
+  toStage: ApplicationStage;
+  actorName: string;
+  reason: string | null;
+  occurredAt: Date;
+};
 export type ApplicationProfile = Omit<ApplicationListItem, "nextStep"> & {
   documents: ApplicationDocument[];
   notes: ApplicationNote[];
+  stageDates: Partial<Record<ApplicationStage, Date>>;
+  activity: ApplicationActivity[];
   mobile: string | null;
   address: string | null;
   expectedSalary: number | null;
@@ -32,7 +42,7 @@ export type ApplicationJobPostingOption = { id: string; title: string; applicati
 export type ApplicationPage = { jobPostingOptions: ApplicationJobPostingOption[]; newThisWeek: number; stageCounts: Record<ApplicationTab, number>; rows: ApplicationListItem[]; total: number; page: number; pageSize: 25 };
 
 export class ApplicationError extends Error {
-  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "validation" | "not-found") {
+  constructor(public readonly reason: "denied" | "invalid" | "unavailable" | "validation" | "not-found" | "conflict") {
     super(`Application: ${reason}`);
   }
 }
@@ -116,6 +126,39 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         RETURNING id`, [id, text.trim(), access.staff.name]);
       if (!rows[0]) throw new ApplicationError("not-found");
     },
+    /** The caller supplies the Stage they reviewed, so stale actions cannot advance it twice. */
+    async moveStage(id: number, fromStage: ApplicationStage, toStage: ApplicationStage, reason?: string): Promise<void> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      const forward: Partial<Record<ApplicationStage, ApplicationStage>> = {
+        New: "Screening", Screening: "Interview", Interview: "Offer", Offer: "Hired",
+      };
+      if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647
+        || !Object.hasOwn(forward, fromStage)
+        || (toStage !== "Rejected" && forward[fromStage] !== toStage)
+        || (reason !== undefined && (typeof reason !== "string" || toStage !== "Rejected"))) {
+        throw new ApplicationError("validation");
+      }
+      // One statement is one transaction: a failed history/activity insert rolls back the status.
+      // PostgreSQL rechecks this status predicate after waiting for a concurrent writer.
+      const { rows } = await db.query<{ moved: boolean; exists: boolean }>(`
+        WITH moved AS (
+          UPDATE public.applications SET status = $3, updated_at = statement_timestamp()
+          WHERE id = $1 AND status = $2
+          RETURNING id, updated_at
+        ), history AS (
+          INSERT INTO public.hrms_application_stage_history (application_id, stage, reached_at)
+          SELECT id, $3, updated_at FROM moved
+        ), activity AS (
+          INSERT INTO public.hrms_application_activity
+            (application_id, from_stage, to_stage, actor_name, reason, occurred_at)
+          SELECT id, $4, $3, $5, $6, updated_at FROM moved
+        )
+        SELECT EXISTS(SELECT 1 FROM moved) AS moved,
+          EXISTS(SELECT 1 FROM public.applications WHERE id = $1) AS exists`,
+      [id, fromStage === "New" ? "Received" : fromStage, toStage, fromStage, access.staff.name, reason ?? null]);
+      if (!rows[0].moved) throw new ApplicationError(rows[0].exists ? "conflict" : "not-found");
+    },
     async downloadDocument(id: number, documentId: number): Promise<Response> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
@@ -155,8 +198,17 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
       if (!Number.isInteger(id) || id < 1 || id > 2_147_483_647) throw new ApplicationError("validation");
       // Careers snapshots use phone/location. Older snapshots omit email and the
       // optional salary/availability fields; only email has a legacy identity fallback.
-      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "notes"> & { documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
-        SELECT a.documents_snapshot, j.required_documents, a.id, a.profile_snapshot->>'fullName' AS "applicantName",
+      const { rows } = await db.query<Omit<ApplicationProfile, "documents" | "notes" | "stageDates" | "activity"> & { stage_dates: Partial<Record<ApplicationStage, string>>; activity: (Omit<ApplicationActivity, "occurredAt"> & { occurredAt: string })[]; documents_snapshot: SubmittedDocument[]; required_documents: string[] }>(`
+        SELECT a.documents_snapshot, j.required_documents, a.id,
+          jsonb_build_object('New', a.created_at) || COALESCE((
+            SELECT jsonb_object_agg(h.stage, h.reached_at)
+            FROM public.hrms_application_stage_history h WHERE h.application_id = a.id
+          ), '{}'::jsonb) AS stage_dates,
+          COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'id', e.id, 'fromStage', e.from_stage, 'toStage', e.to_stage,
+            'actorName', e.actor_name, 'reason', e.reason, 'occurredAt', e.occurred_at
+          ) ORDER BY e.occurred_at DESC, e.id DESC)
+            FROM public.hrms_application_activity e WHERE e.application_id = a.id), '[]'::jsonb) AS activity, a.profile_snapshot->>'fullName' AS "applicantName",
           COALESCE(a.profile_snapshot->>'email', p.email) AS "applicantEmail",
           a.profile_snapshot->>'phone' AS mobile,
           a.profile_snapshot->>'location' AS address,
@@ -170,12 +222,15 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         JOIN public.job_postings j ON j.id = a.job_posting_id
         WHERE a.id = $1`, [id]);
       if (!rows[0]) throw new ApplicationError("not-found");
-      const { documents_snapshot, required_documents, ...profile } = rows[0];
+      const { documents_snapshot, required_documents, stage_dates, activity, ...profile } = rows[0];
       const { rows: notes } = await db.query<ApplicationNote>(`
         SELECT id, text, author_name AS "authorName", created_at AS "createdAt"
         FROM public.hrms_application_notes WHERE application_id = $1
         ORDER BY created_at DESC, id DESC`, [id]);
-      return { ...profile, notes, documents: [
+      return { ...profile, notes,
+        stageDates: Object.fromEntries(Object.entries(stage_dates).map(([stage, date]) => [stage, new Date(date)])),
+        activity: activity.map((entry) => ({ ...entry, occurredAt: new Date(entry.occurredAt) })),
+        documents: [
         ...documents_snapshot.map((document): ApplicationDocument => ({ ...document, status: "Submitted",
           downloadUrl: `/api/applications/${id}/documents/${document.id}` })),
         ...required_documents.filter((required) => !documents_snapshot.some((document) => document.requiredFor === required))
