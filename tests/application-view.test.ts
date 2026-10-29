@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -153,5 +153,11 @@ describe("application profile view", () => {
       expect(activityEntries({ ...base, interviews: [], activity: [event({ toStage: "Rejected", reason: "Not a fit" })] })[0])
         .toEqual({ tone: "red", title: "Rejected", detail: "23 Oct · by Liza Bautista · Not a fit" });
     });
+  });
+});
+
+describe("note time", () => {
+  it("reads as a day and time in Manila", () => {
+    expect(dayTime(new Date("2026-10-28T06:15:00Z"))).toBe("28 Oct, 2:15 PM");
   });
 });

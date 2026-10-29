@@ -82,7 +82,7 @@ const TRACKER_LABEL: Record<(typeof TRACKER_STAGES)[number], string> = { New: "A
 const manila = (date: Date, options: Intl.DateTimeFormatOptions) => date.toLocaleString("en-GB", { timeZone: "Asia/Manila", ...options });
 
 /** "30 Oct, 10:00 AM" in Manila time. */
-const dayTime = (date: Date) => `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`;
+export const dayTime = (date: Date) => `${manila(date, { day: "numeric", month: "short" })}, ${manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()}`;
 
 /**
  * The five tracker steps. Reached steps are done and the current Stage is marked; later steps are empty with no date.
