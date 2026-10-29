@@ -1,4 +1,4 @@
-import type { ApplicationProfile, ApplicationStage, ApplicationTab, InterviewInput } from "./applications";
+import type { ApplicationInterview, ApplicationProfile, ApplicationStage, ApplicationTab, InterviewInput } from "./applications";
 
 export const STAGE_BADGE = {
   New: "info",
@@ -169,6 +169,23 @@ export function activityEntries({ activity, interviews, jobPostingTitle, applied
     return event.fromStage === event.toStage ? [scheduled] : [scheduled, moved];
   });
   return [...entries, { tone: "purple", title: "Applied", detail: `${day(appliedAt)} · ${jobPostingTitle}` }];
+}
+
+export type InterviewRow = { date: string; time: string; type: string; interviewer: string; score: string; status: "Scheduled" | "Completed" };
+
+/** One line of the profile's Interviews card: "30 Oct 2026", "10:00 – 10:45 AM", "In person · Cainta branch". Completed once a result is recorded. */
+export function interviewRow(interview: ApplicationInterview): InterviewRow {
+  const clock = (date: Date) => manila(date, { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase();
+  const [start, end] = [clock(interview.startsAt), clock(interview.endsAt)];
+  const meridiem = (text: string) => text.slice(-2);
+  return {
+    date: formatApplied(interview.startsAt),
+    time: `${meridiem(start) === meridiem(end) ? start.slice(0, -3) : start} – ${end}`,
+    type: interview.type === "Online" ? "Online" : `In person · ${interview.location.split(" · ")[0]}`,
+    interviewer: interview.interviewerName,
+    score: interview.score === null ? "—" : `${interview.score} / 5`,
+    status: interview.result === null ? "Scheduled" : "Completed",
+  };
 }
 
 export type InterviewForm = { type: InterviewInput["type"]; date: string; start: string; end: string; interviewer: string; meetingLink: string; location: string; mapLink: string };

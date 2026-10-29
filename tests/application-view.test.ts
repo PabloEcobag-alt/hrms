@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReject, readInterviewForm, type InterviewForm, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { canReject, interviewRow, readInterviewForm, type InterviewForm, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -200,5 +200,25 @@ describe("schedule interview form", () => {
     });
     expect(readInterviewForm({ ...form, type: "In person", location: "" }).errors).toEqual({ place: "Enter the location." });
     expect(readInterviewForm({ ...form, end: "15:00" }).errors).toEqual({ end: "End time must be after the start." });
+  });
+});
+
+describe("interview rows", () => {
+  const base = { id: 1, startsAt: new Date("2026-10-30T02:00:00Z"), endsAt: new Date("2026-10-30T02:45:00Z"), type: "In person" as const, interviewerName: "Paolo Garcia", location: "Cainta branch · https://maps.example/x", score: null, result: null };
+
+  it("reads a booked interview as Scheduled with no score", () => {
+    expect(interviewRow(base)).toEqual({ date: "30 Oct 2026", time: "10:00 – 10:45 AM", type: "In person · Cainta branch", interviewer: "Paolo Garcia", score: "—", status: "Scheduled" });
+  });
+
+  it("reads a recorded result as Completed with its score", () => {
+    expect(interviewRow({ ...base, score: 4, result: "Passed" })).toMatchObject({ score: "4 / 5", status: "Completed" });
+  });
+
+  it("shows an Online interview as just Online", () => {
+    expect(interviewRow({ ...base, type: "Online", location: "https://meet.example/abc" }).type).toBe("Online");
+  });
+
+  it("keeps am/pm on both ends when the interview crosses noon", () => {
+    expect(interviewRow({ ...base, startsAt: new Date("2026-10-30T03:30:00Z"), endsAt: new Date("2026-10-30T04:15:00Z") }).time).toBe("11:30 AM – 12:15 PM");
   });
 });
