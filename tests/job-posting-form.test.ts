@@ -19,7 +19,8 @@ describe("job posting form", () => {
           employmentType: "Full-time",
           location: "Manila",
           summary: "Serve customers",
-          responsibilities: "• Ring up sales",
+          responsibilities: "Ring up sales\n\n  Close the till ",
+          benefits: "13th month pay",
           qualifications: "Friendly",
           requiredDocuments: ["Resume or CV", "", "  NBI clearance "],
           screeningCriteria: "Cash handling",
@@ -32,7 +33,9 @@ describe("job posting form", () => {
       employmentType: "Full-time",
       location: "Manila",
       description: "Serve customers",
-      requirements: "Responsibilities:\n• Ring up sales\n\nQualifications:\nFriendly",
+      requirements: "Qualifications:\nFriendly",
+      responsibilities: ["Ring up sales", "Close the till"],
+      benefits: ["13th month pay"],
       requiredDocuments: ["Resume or CV", "NBI clearance"],
       screeningCriteria: ["Cash handling"],
       deadline: new Date("2026-12-31T23:59:59.999Z"),
@@ -55,6 +58,8 @@ describe("job posting form", () => {
       location: "",
       description: "",
       requirements: "",
+      responsibilities: [],
+      benefits: [],
       requiredDocuments: [],
       screeningCriteria: [],
       deadline: null,
@@ -94,7 +99,7 @@ describe("job description sections", () => {
     const fields = fieldsFromForm(form({ summary: " Help out ", responsibilities: "", qualifications: " Diploma " }));
     expect(fields.description).toBe("Help out");
     expect(fields.requirements).toBe("Qualifications:\nDiploma");
-    expect(fieldsFromForm(form({ responsibilities: "Pack" })).requirements).toBe("Responsibilities:\nPack");
+    expect(fieldsFromForm(form({ responsibilities: "Pack" })).requirements).toBe("");
     expect(fieldsFromForm(form({})).requirements).toBe("");
   });
 

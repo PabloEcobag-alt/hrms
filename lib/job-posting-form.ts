@@ -13,7 +13,7 @@ const lines = (data: FormData, name: string) =>
     .filter(Boolean);
 
 /** Every visible form field is sent. */
-export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "responsibilities" | "benefits"> {
+export function fieldsFromForm(data: FormData): JobPostingFields {
   const date = text(data, "deadline");
   // A deadline is the end of its chosen day.
   const deadline = date ? new Date(`${date}T23:59:59.999Z`) : null;
@@ -24,10 +24,10 @@ export function fieldsFromForm(data: FormData): Omit<JobPostingFields, "responsi
     employmentType: text(data, "employmentType"),
     location: text(data, "location"),
     description: text(data, "summary"),
-    requirements: joinRequirements({
-      responsibilities: text(data, "responsibilities"),
-      qualifications: text(data, "qualifications"),
-    }),
+    // Responsibilities now live in their own list; requirements keeps Qualifications.
+    requirements: joinRequirements({ responsibilities: "", qualifications: text(data, "qualifications") }),
+    responsibilities: lines(data, "responsibilities"),
+    benefits: lines(data, "benefits"),
     requiredDocuments: data
       .getAll("requiredDocuments")
       .map((document) => String(document).trim())
