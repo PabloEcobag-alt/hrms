@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canRecordResult, SCORE_LABELS, canReject, interviewRow, readInterviewForm, type InterviewForm, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { readApplicantForm, canRecordResult, SCORE_LABELS, canReject, interviewRow, readInterviewForm, type InterviewForm, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -231,5 +231,26 @@ describe("interview rows", () => {
 
   it("keeps am/pm on both ends when the interview crosses noon", () => {
     expect(interviewRow({ ...base, startsAt: new Date("2026-10-30T03:30:00Z"), endsAt: new Date("2026-10-30T04:15:00Z") }).time).toBe("11:30 AM – 12:15 PM");
+  });
+});
+
+describe("add applicant form", () => {
+  const form = { fullName: " Mylene Santos ", email: " mylene@example.com ", mobile: "0917 123 4567", address: "Cainta, Rizal", jobPostingId: "job-1", expectedSalary: "15500", availableFrom: "2026-11-10" };
+
+  it("trims the fields and reads the salary as a number", () => {
+    expect(readApplicantForm(form)).toEqual({ input: { fullName: "Mylene Santos", email: "mylene@example.com", mobile: "0917 123 4567", address: "Cainta, Rizal", jobPostingId: "job-1", expectedSalary: 15500, availableFrom: "2026-11-10" } });
+  });
+
+  it("names every missing field", () => {
+    expect(readApplicantForm({ fullName: " ", email: "", mobile: "", address: "", jobPostingId: "", expectedSalary: "", availableFrom: "" }).errors).toEqual({
+      fullName: "Enter the full name.", email: "Enter an email address.", mobile: "Enter a mobile number.", address: "Enter the address.",
+      jobPostingId: "Choose a Job Posting.", expectedSalary: "Enter the expected salary.", availableFrom: "Choose the date they can start.",
+    });
+  });
+
+  it("rejects a malformed email and a negative salary", () => {
+    expect(readApplicantForm({ ...form, email: "mylene" }).errors).toEqual({ email: "Enter a valid email address." });
+    expect(readApplicantForm({ ...form, expectedSalary: "-1" }).errors).toEqual({ expectedSalary: "Enter a salary of 0 or more." });
+    expect(readApplicantForm({ ...form, expectedSalary: "abc" }).errors).toEqual({ expectedSalary: "Enter a salary of 0 or more." });
   });
 });

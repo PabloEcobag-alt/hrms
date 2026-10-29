@@ -1,4 +1,4 @@
-import type { ApplicationInterview, ApplicationProfile, ApplicationStage, ApplicationTab, InterviewInput } from "./applications";
+import type { ApplicationInterview, ApplicationProfile, ApplicationStage, ApplicationTab, InterviewInput, ManualApplicantInput } from "./applications";
 
 export const STAGE_BADGE = {
   New: "info",
@@ -211,4 +211,24 @@ export function readInterviewForm(form: InterviewForm): { input?: InterviewInput
   if (online ? !place : !form.location.trim()) errors.place = online ? "Enter the meeting link." : "Enter the location.";
   if (Object.keys(errors).length > 0) return { errors };
   return { input: { startsAt: `${form.date}T${form.start}:00+08:00`, endsAt: `${form.date}T${form.end}:00+08:00`, type: form.type, interviewerName, location: place } };
+}
+
+export type ApplicantForm = Record<"fullName" | "email" | "mobile" | "address" | "jobPostingId" | "expectedSalary" | "availableFrom", string>;
+export type ApplicantFormErrors = Partial<Record<keyof ApplicantForm, string>>;
+
+/** Reads the Add applicant form; the salary arrives as typed and leaves as a number. */
+export function readApplicantForm(form: ApplicantForm): { input?: ManualApplicantInput; errors?: ApplicantFormErrors } {
+  const errors: ApplicantFormErrors = {};
+  const [fullName, email, mobile, address, salary] = [form.fullName, form.email, form.mobile, form.address, form.expectedSalary].map((value) => value.trim());
+  if (!fullName) errors.fullName = "Enter the full name.";
+  if (!email) errors.email = "Enter an email address.";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email address.";
+  if (!mobile) errors.mobile = "Enter a mobile number.";
+  if (!address) errors.address = "Enter the address.";
+  if (!form.jobPostingId) errors.jobPostingId = "Choose a Job Posting.";
+  if (!salary) errors.expectedSalary = "Enter the expected salary.";
+  else if (!Number.isFinite(Number(salary)) || Number(salary) < 0) errors.expectedSalary = "Enter a salary of 0 or more.";
+  if (!form.availableFrom) errors.availableFrom = "Choose the date they can start.";
+  if (Object.keys(errors).length > 0) return { errors };
+  return { input: { fullName, email, mobile, address, jobPostingId: form.jobPostingId, expectedSalary: Number(salary), availableFrom: form.availableFrom } };
 }
