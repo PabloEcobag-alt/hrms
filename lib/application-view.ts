@@ -59,3 +59,17 @@ export function applicantsHref({ stage, search, job, page }: { stage?: Applicati
 
 /** "Showing 132 applicants": everything the current Stage and search match, across pages. */
 export const formatShowing = (total: number) => `Showing ${total} ${total === 1 ? "applicant" : "applicants"}`;
+
+/** The CSV download for a view: the same filters as the list, with no page so every match comes back. */
+export function exportHref({ stage, search, job }: { stage?: ApplicationTab; search?: string; job?: string }) {
+  const params = new URLSearchParams();
+  if (stage && stage !== "All") params.set("stage", stage);
+  if (search) params.set("q", search);
+  if (job) params.set("job", job);
+  const query = params.toString();
+  return query ? `/api/applications/export?${query}` : "/api/applications/export";
+}
+
+/** "applicants-2026-10-22.csv": the day of the export in Manila time. */
+export const exportFileName = (now: Date) =>
+  `applicants-${now.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" })}.csv`;
