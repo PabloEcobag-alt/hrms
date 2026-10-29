@@ -13,6 +13,7 @@ import { ApplicationActivity } from "@/components/hiring/application-activity";
 import { RejectApplication } from "@/components/hiring/reject-application";
 import { StageActions } from "@/components/hiring/stage-actions";
 import { ApplicationNotes } from "@/components/hiring/application-notes";
+import { ApplicationInterviews } from "@/components/hiring/application-interviews";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import { ProfileSkeleton } from "./profile-skeleton";
 
@@ -93,7 +94,7 @@ async function Profile({ id }: { id: number }) {
         <StageActions applicationId={id} stage={profile.stage} applicantName={profile.applicantName} jobTitle={profile.jobPostingTitle} location={profile.location} />
       </PageHeader>
       <Tracker profile={profile} />
-      <ProfileColumns main={<ApplicationDetails profile={profile} />} aside={<><ApplicationActivity profile={profile} /><ApplicationNotes applicationId={id} notes={profile.notes} /></>} />
+      <ProfileColumns main={<><ApplicationDetails profile={profile} /><ApplicationInterviews interviews={profile.interviews} /></>} aside={<><ApplicationActivity profile={profile} /><ApplicationNotes applicationId={id} notes={profile.notes} /></>} />
     </>
   );
 }
