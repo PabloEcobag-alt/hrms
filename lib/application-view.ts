@@ -43,11 +43,15 @@ export const stageFromParam = (value: string | undefined): ApplicationTab => STA
 /** Blank search in the URL means no search. */
 export const searchFromParam = (value: string | undefined) => value?.trim() || undefined;
 
+/** Blank Job in the URL means all jobs. */
+export const jobFromParam = (value: string | undefined) => value?.trim() || undefined;
+
 /** The list URL for a view; defaults are left out so the plain list keeps its plain link. */
-export function applicantsHref({ stage, search, page }: { stage?: ApplicationTab; search?: string; page?: number }) {
+export function applicantsHref({ stage, search, job, page }: { stage?: ApplicationTab; search?: string; job?: string; page?: number }) {
   const params = new URLSearchParams();
   if (stage && stage !== "All") params.set("stage", stage);
   if (search) params.set("q", search);
+  if (job) params.set("job", job);
   if (page && page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/applicants?${query}` : "/applicants";
