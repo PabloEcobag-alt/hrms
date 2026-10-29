@@ -1,4 +1,4 @@
-import type { ApplicationProfile, ApplicationStage, ApplicationTab } from "./applications";
+import type { ApplicationProfile, ApplicationStage, ApplicationTab, InterviewInput } from "./applications";
 
 export const STAGE_BADGE = {
   New: "info",
@@ -169,4 +169,23 @@ export function activityEntries({ activity, interviews, jobPostingTitle, applied
     return event.fromStage === event.toStage ? [scheduled] : [scheduled, moved];
   });
   return [...entries, { tone: "purple", title: "Applied", detail: `${day(appliedAt)} · ${jobPostingTitle}` }];
+}
+
+export type InterviewForm = { type: InterviewInput["type"]; date: string; start: string; end: string; interviewer: string; meetingLink: string; location: string; mapLink: string };
+export type InterviewFormErrors = Partial<Record<"date" | "start" | "end" | "interviewer" | "place", string>>;
+
+/** Reads the Schedule interview form: times are Manila wall-clock; an Online interview's place is its meeting link, an in-person one's is the location plus an optional map link. */
+export function readInterviewForm(form: InterviewForm): { input?: InterviewInput; errors?: InterviewFormErrors } {
+  const errors: InterviewFormErrors = {};
+  const interviewerName = form.interviewer.trim();
+  const online = form.type === "Online";
+  const place = online ? form.meetingLink.trim() : [form.location.trim(), form.mapLink.trim()].filter(Boolean).join(" · ");
+  if (!form.date) errors.date = "Choose a date.";
+  if (!form.start) errors.start = "Choose a start time.";
+  if (!form.end) errors.end = "Choose an end time.";
+  else if (form.start && form.end <= form.start) errors.end = "End time must be after the start.";
+  if (!interviewerName) errors.interviewer = "Enter the interviewer.";
+  if (online ? !place : !form.location.trim()) errors.place = online ? "Enter the meeting link." : "Enter the location.";
+  if (Object.keys(errors).length > 0) return { errors };
+  return { input: { startsAt: `${form.date}T${form.start}:00+08:00`, endsAt: `${form.date}T${form.end}:00+08:00`, type: form.type, interviewerName, location: place } };
 }

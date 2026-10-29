@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { ApplicationError, type ApplicationStage } from "@/lib/applications";
 import { LOGIN_PATH, NO_ACCESS_PATH } from "@/lib/portal/config";
 import { applicationsForRequest } from "@/lib/portal/applications";
+import { readInterviewForm, type InterviewFormErrors } from "@/lib/application-view";
 
 export type NoteFormState = { error?: string; saved?: number };
 
@@ -82,4 +83,37 @@ export async function moveApplication(applicationId: number, fromStage: Applicat
   revalidatePath(`/applicants/${applicationId}`);
   revalidatePath("/applicants");
   return {};
+}
+
+export type ScheduleState = { error?: string; fieldErrors?: InterviewFormErrors; scheduled?: number };
+
+const SCHEDULE_MESSAGES: Record<ApplicationError["reason"], string> = {
+  validation: "Check the interview details and try again.",
+  "not-found": "This Application no longer exists.",
+  conflict: "This Application moved on since you opened it. Refresh to see its current Stage.",
+  unavailable: "HRMS could not reach the Portal or database. Please try again in a moment.",
+  invalid: "",
+  denied: "",
+};
+
+/** Schedules an interview from the Stage the reviewer saw, moving the Application to Interview. */
+export async function scheduleInterview(applicationId: number, fromStage: ApplicationStage, previous: ScheduleState, data: FormData): Promise<ScheduleState> {
+  const field = (name: string) => (data.get(name) as string | null) ?? "";
+  const { input, errors } = readInterviewForm({
+    type: field("type") === "In person" ? "In person" : "Online",
+    date: field("date"), start: field("start"), end: field("end"), interviewer: field("interviewer"),
+    meetingLink: field("meetingLink"), location: field("location"), mapLink: field("mapLink"),
+  });
+  if (!input) return { fieldErrors: errors };
+  try {
+    await (await applicationsForRequest()).scheduleInterview(applicationId, fromStage, input);
+  } catch (error) {
+    if (!(error instanceof ApplicationError)) throw error;
+    if (error.reason === "denied") redirect(NO_ACCESS_PATH);
+    if (error.reason === "invalid") redirect(LOGIN_PATH);
+    return { error: SCHEDULE_MESSAGES[error.reason] };
+  }
+  revalidatePath(`/applicants/${applicationId}`);
+  revalidatePath("/applicants");
+  return { scheduled: (previous.scheduled ?? 0) + 1 };
 }
