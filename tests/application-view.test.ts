@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { canReject, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -159,5 +159,12 @@ describe("application profile view", () => {
 describe("note time", () => {
   it("reads as a day and time in Manila", () => {
     expect(dayTime(new Date("2026-10-28T06:15:00Z"))).toBe("28 Oct, 2:15 PM");
+  });
+});
+
+describe("rejecting from the profile", () => {
+  it("is offered only while the Application is still in progress", () => {
+    for (const stage of ["New", "Screening", "Interview", "Offer"] as const) expect(canReject(stage)).toBe(true);
+    for (const stage of ["Hired", "Rejected", "Withdrawn"] as const) expect(canReject(stage)).toBe(false);
   });
 });

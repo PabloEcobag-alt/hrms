@@ -10,6 +10,11 @@ export const STAGE_BADGE = {
   Withdrawn: "secondary",
 } as const satisfies Record<ApplicationStage, string>;
 
+/** Staff can reject an Application only while it is New, Screening, Interview or Offer. */
+export function canReject(stage: ApplicationStage): boolean {
+  return !(["Hired", "Rejected", "Withdrawn"] as ApplicationStage[]).includes(stage);
+}
+
 /** A missing, malformed or non-positive page in the URL means the first page. */
 export function pageFromParam(value: string | undefined): number {
   const page = Number(value);

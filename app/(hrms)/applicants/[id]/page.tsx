@@ -6,10 +6,11 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { BackLink, CardTitle, PAGE, PageHeader, ProfileColumns } from "@/components/hiring/parts";
 import { ApplicationError, type ApplicationProfile } from "@/lib/applications";
-import { STAGE_BADGE, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps } from "@/lib/application-view";
+import { STAGE_BADGE, canReject, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
 import { ApplicationActivity } from "@/components/hiring/application-activity";
+import { RejectApplication } from "@/components/hiring/reject-application";
 import { ApplicationNotes } from "@/components/hiring/application-notes";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import { ProfileSkeleton } from "./profile-skeleton";
@@ -86,7 +87,9 @@ async function Profile({ id }: { id: number }) {
         title={profile.applicantName}
         subtitle={formatAppliedFor(profile.jobPostingTitle, profile.location, profile.appliedAt)}
         badge={<Badge variant={STAGE_BADGE[profile.stage]}>{profile.stage}</Badge>}
-      />
+      >
+        {canReject(profile.stage) && <RejectApplication applicationId={id} stage={profile.stage} applicantName={profile.applicantName} />}
+      </PageHeader>
       <Tracker profile={profile} />
       <ProfileColumns main={<ApplicationDetails profile={profile} />} aside={<><ApplicationActivity profile={profile} /><ApplicationNotes applicationId={id} notes={profile.notes} /></>} />
     </>
