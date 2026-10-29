@@ -57,3 +57,29 @@ export async function rejectApplication(applicationId: number, fromStage: Applic
   revalidatePath("/applicants");
   return {};
 }
+
+export type MoveState = { error?: string };
+
+const MOVE_MESSAGES: Record<ApplicationError["reason"], string> = {
+  validation: "This Application can no longer be moved that way.",
+  "not-found": "This Application no longer exists.",
+  conflict: "This Application moved on since you opened it. Refresh to see its current Stage.",
+  unavailable: "HRMS could not reach the Portal or database. Please try again in a moment.",
+  invalid: "",
+  denied: "",
+};
+
+/** Moves an Application one Stage forward from the Stage the reviewer saw. */
+export async function moveApplication(applicationId: number, fromStage: ApplicationStage, toStage: ApplicationStage): Promise<MoveState> {
+  try {
+    await (await applicationsForRequest()).moveStage(applicationId, fromStage, toStage);
+  } catch (error) {
+    if (!(error instanceof ApplicationError)) throw error;
+    if (error.reason === "denied") redirect(NO_ACCESS_PATH);
+    if (error.reason === "invalid") redirect(LOGIN_PATH);
+    return { error: MOVE_MESSAGES[error.reason] };
+  }
+  revalidatePath(`/applicants/${applicationId}`);
+  revalidatePath("/applicants");
+  return {};
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReject, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
+import { canReject, stageActions, applicantsHref, exportFileName, exportHref, detailOrDash, formatAppliedFor, formatAvailableFrom, formatFileSize, formatSalary, trackerSteps, formatApplied, formatRange, formatShowing, activityEntries, dayTime, formatSubtitle, jobFromParam, pageCount, pageFromParam, searchFromParam, stageFromParam } from "@/lib/application-view";
 
 describe("application list view", () => {
   it("reads the page from the URL, defaulting to the first", () => {
@@ -166,5 +166,17 @@ describe("rejecting from the profile", () => {
   it("is offered only while the Application is still in progress", () => {
     for (const stage of ["New", "Screening", "Interview", "Offer"] as const) expect(canReject(stage)).toBe(true);
     for (const stage of ["Hired", "Rejected", "Withdrawn"] as const) expect(canReject(stage)).toBe(false);
+  });
+});
+
+describe("stageActions", () => {
+  it("offers the forward buttons for each Stage", () => {
+    expect(stageActions("New").map((a) => a.label)).toEqual(["Move to Screening"]);
+    expect(stageActions("Screening").map((a) => a.label)).toEqual(["Schedule interview"]);
+    expect(stageActions("Interview").map((a) => a.label)).toEqual(["Schedule interview", "Move to Offer"]);
+  });
+
+  it("offers no forward action from Offer onward", () => {
+    for (const stage of ["Offer", "Hired", "Rejected", "Withdrawn"] as const) expect(stageActions(stage)).toEqual([]);
   });
 });
