@@ -203,6 +203,32 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         || typeof interview.location !== "string" || !interview.location.trim()) throw new ApplicationError("validation");
       await recordChange(id, fromStage, "Interview", access.staff.name, undefined, interview);
     },
+    async recordInterviewResult(id: number, interviewId: number, outcome: { score: number; result: "Passed" | "Not passed" }): Promise<void> {
+      const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
+      if (access.decision !== "allowed") throw new ApplicationError(access.decision);
+      if (![id, interviewId].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647)
+        || !outcome || !Number.isInteger(outcome.score) || outcome.score < 1 || outcome.score > 5
+        || !["Passed", "Not passed"].includes(outcome.result)) throw new ApplicationError("validation");
+      // Keep the private result and its Staff activity in the same atomic statement.
+      // The database clock enforces the start-time boundary for every caller.
+      const { rows } = await db.query<{ recorded: boolean; exists: boolean }>(`
+        WITH recorded AS (
+          UPDATE public.hrms_application_interviews SET score = $3, result = $4
+          WHERE application_id = $1 AND id = $2 AND starts_at <= statement_timestamp()
+          RETURNING id, application_id
+        ), activity AS (
+          INSERT INTO public.hrms_application_activity
+            (application_id, from_stage, to_stage, actor_name, reason, interview_id, occurred_at)
+          SELECT a.id, CASE WHEN a.status = 'Received' THEN 'New' ELSE a.status END,
+            CASE WHEN a.status = 'Received' THEN 'New' ELSE a.status END, $5, $6, r.id, statement_timestamp()
+          FROM recorded r JOIN public.applications a ON a.id = r.application_id
+        )
+        SELECT EXISTS(SELECT 1 FROM recorded) AS recorded,
+          EXISTS(SELECT 1 FROM public.hrms_application_interviews WHERE application_id = $1 AND id = $2) AS exists`,
+      [id, interviewId, outcome.score, outcome.result, access.staff.name,
+        `Interview result: ${outcome.result} (score: ${outcome.score}/5)`]);
+      if (!rows[0].recorded) throw new ApplicationError(rows[0].exists ? "conflict" : "not-found");
+    },
     async downloadDocument(id: number, documentId: number): Promise<Response> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
       if (access.decision !== "allowed") throw new ApplicationError(access.decision);
