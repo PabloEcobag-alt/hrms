@@ -9,6 +9,7 @@ import { ApplicationError, type ApplicationProfile } from "@/lib/applications";
 import { STAGE_BADGE, detailOrDash, formatAppliedFor, formatAvailableFrom, formatSalary, trackerSteps } from "@/lib/application-view";
 import { applicationsForRequest } from "@/lib/portal/applications";
 import { requireModule } from "@/lib/portal/staff";
+import { ApplicationActivity } from "@/components/hiring/application-activity";
 import { ApplicationDocuments } from "@/components/hiring/application-documents";
 import { ProfileSkeleton } from "./profile-skeleton";
 
@@ -86,7 +87,14 @@ async function Profile({ id }: { id: number }) {
         badge={<Badge variant={STAGE_BADGE[profile.stage]}>{profile.stage}</Badge>}
       />
       <Tracker profile={profile} />
-      <ApplicationDetails profile={profile} />
+      <div className="flex flex-col items-start gap-[16px] lg:flex-row">
+        <div className="flex w-full min-w-0 flex-1 flex-col gap-[16px]">
+          <ApplicationDetails profile={profile} />
+        </div>
+        <div className="flex w-full shrink-0 flex-col gap-[16px] lg:w-[380px]">
+          <ApplicationActivity profile={profile} />
+        </div>
+      </div>
     </>
   );
 }
