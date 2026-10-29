@@ -1,4 +1,4 @@
-import { get } from "@vercel/blob";
+import { gatewayDocumentFiles, type DocumentFiles } from "@/lib/document-files";
 import { database, type Database } from "./database";
 import { accessFor } from "./portal/access";
 
@@ -14,7 +14,7 @@ export type ApplicationListItem = {
   stage: ApplicationStage;
   nextStep: string;
 };
-type SubmittedDocument = { id: number; name: string; size: number; contentType: string; requiredFor: string };
+type SubmittedDocument = { id: number; name: string; size: number; contentType: string; uploadedAt: Date | null; requiredFor: string };
 export type ApplicationDocument = (SubmittedDocument & { status: "Submitted"; downloadUrl: string })
   | { requiredFor: string; status: "Requested" };
 export type InterviewInput = { startsAt: string; endsAt: string; type: "Online" | "In person"; interviewerName: string; location: string };
@@ -66,7 +66,7 @@ const nextSteps: Record<ApplicationStage, string> = {
 const validId = (id: unknown) => Number.isInteger(id) && id !== 0 && Math.abs(id as number) <= 2_147_483_647;
 
 /** Server-side boundary. Recheck the Portal on every operation, including repeated reads. */
-export function applicationsFor(sessionHandle: string | undefined, db: Database = database) {
+export function applicationsFor(sessionHandle: string | undefined, db: Database = database, files: DocumentFiles = gatewayDocumentFiles()) {
   async function read({ page = 1, stage = "All", search = "", jobPostingId }: ApplicationFilters & { page?: number } = {}, paginated = true): Promise<ApplicationPage> {
     const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
     if (access.decision !== "allowed") throw new ApplicationError(access.decision);
@@ -282,31 +282,28 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         throw new ApplicationError("validation");
       }
       // Resolve storage only for a snapshot member owned by the same Applicant.
-      const { rows } = await db.query<SubmittedDocument & { pathname: string }>(`
+      const { rows } = await db.query<SubmittedDocument & { fileId: string | null }>(`
         SELECT snapshot->>'name' AS name, (snapshot->>'size')::integer AS size,
-          snapshot->>'contentType' AS "contentType", d.blob_pathname AS pathname
+          snapshot->>'contentType' AS "contentType", d.file_id AS "fileId"
         FROM public.applications a
         CROSS JOIN LATERAL jsonb_array_elements(a.documents_snapshot) snapshot
         JOIN public.applicant_documents d ON d.id = $2 AND d.applicant_id = a.applicant_id
         WHERE a.id = $1 AND snapshot->>'id' = $2::text`, [id, documentId]);
       const document = rows[0];
       if (!document) throw new ApplicationError("not-found");
-      let blob;
-      try {
-        blob = await get(document.pathname, { access: "private", useCache: false });
-      } catch {
-        throw new ApplicationError("unavailable");
+      if (!document.fileId) {
+        console.error("Application Document has no File", { id, documentId });
+        throw new ApplicationError("not-found");
       }
-      if (!blob) throw new ApplicationError("not-found");
-      if (blob.statusCode !== 200) throw new ApplicationError("unavailable");
-      const filename = encodeURIComponent(document.name).replace(/[!'()*]/g, (character) =>
-        `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
-      return new Response(blob.stream, { headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename*=UTF-8''${filename}`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      } });
+      try {
+        return new Response(null, { status: 307, headers: {
+          Location: await files.viewUrl(document.fileId),
+          "Cache-Control": "private, no-store",
+        } });
+      } catch {
+        console.error("Application Document File unavailable", { id, documentId });
+        throw new ApplicationError("not-found");
+      }
     },
     async readProfile(id: number): Promise<ApplicationProfile> {
       const access = await accessFor(sessionHandle).check("Recruitment and Hiring");
@@ -364,13 +361,22 @@ export function applicationsFor(sessionHandle: string | undefined, db: Database 
         SELECT id, text, author_name AS "authorName", created_at AS "createdAt"
         FROM public.hrms_application_notes WHERE application_id = $1
         ORDER BY created_at DESC, id DESC`, [id]);
+      const { rows: documentMetadata } = documents_snapshot.length ? await db.query<{ id: number; contentType: string; uploadedAt: string }>(`
+        SELECT id, content_type AS "contentType", created_at AS "uploadedAt"
+        FROM public.applicant_documents WHERE applicant_id = (
+          SELECT applicant_id FROM public.applications WHERE id = $1
+        ) AND id = ANY($2::integer[])`, [id, documents_snapshot.map((document) => document.id)]) : { rows: [] };
       return { ...profile, notes,
         interviews: interviews.map((item) => ({ ...item, startsAt: new Date(item.startsAt), endsAt: new Date(item.endsAt) })),
         stageDates: Object.fromEntries(Object.entries(stage_dates).map(([stage, date]) => [stage, new Date(date)])),
         activity: activity.map((entry) => ({ ...entry, occurredAt: new Date(entry.occurredAt) })),
         documents: [
-        ...documents_snapshot.map((document): ApplicationDocument => ({ ...document, status: "Submitted",
-          downloadUrl: `/api/applications/${id}/documents/${document.id}` })),
+        ...documents_snapshot.map((document): ApplicationDocument => {
+          const metadata = documentMetadata.find((item) => item.id === document.id);
+          return { ...document, contentType: metadata?.contentType ?? document.contentType,
+            uploadedAt: metadata ? new Date(metadata.uploadedAt) : null, status: "Submitted",
+            downloadUrl: `/api/applications/${id}/documents/${document.id}` };
+        }),
         ...required_documents.filter((required) => !documents_snapshot.some((document) => document.requiredFor === required))
           .map((requiredFor): ApplicationDocument => ({ requiredFor, status: "Requested" })),
       ] };

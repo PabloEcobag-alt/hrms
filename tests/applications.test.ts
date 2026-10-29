@@ -1,4 +1,3 @@
-import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -294,53 +293,45 @@ it.each([0, 1.5, NaN, Infinity, 2_147_483_648])("validates Application id %s", a
 
 it("returns snapshot documents and missing Required Documents as Requested", async () => {
   const id = await seed(1);
+  await db.exec("CREATE TABLE applicant_documents (id integer, applicant_id text, content_type text, created_at timestamptz)");
+  await db.exec("INSERT INTO applicant_documents VALUES (7, 'person-1', 'application/pdf', '2026-10-01T08:00:00Z')");
   await db.query("UPDATE job_postings SET required_documents = $1::jsonb", [JSON.stringify(["Resume or CV", "NBI clearance"])]);
   await db.query("UPDATE applications SET documents_snapshot = $1::jsonb", [JSON.stringify([
     { id: 7, name: "submitted.pdf", size: 123, contentType: "application/pdf", requiredFor: "Resume or CV" },
   ])]);
   expect((await applicationsFor(handle, db).readProfile(id)).documents).toEqual([
-    { id: 7, name: "submitted.pdf", size: 123, contentType: "application/pdf", requiredFor: "Resume or CV", status: "Submitted", downloadUrl: `/api/applications/${id}/documents/7` },
+    { id: 7, name: "submitted.pdf", size: 123, contentType: "application/pdf", requiredFor: "Resume or CV", uploadedAt: new Date("2026-10-01T08:00:00Z"), status: "Submitted", downloadUrl: `/api/applications/${id}/documents/7` },
     { requiredFor: "NBI clearance", status: "Requested" },
   ]);
 });
 
 it("downloads only a submitted document owned by this Application's Applicant", async () => {
   const id = await seed(1);
-  await db.exec(`CREATE TABLE applicant_documents (id integer PRIMARY KEY, applicant_id text, blob_pathname text);
+  await db.exec(`CREATE TABLE applicant_documents (id integer PRIMARY KEY, applicant_id text, file_id text);
     INSERT INTO applicant_documents VALUES (7, 'person-1', 'applicants/person-1/original.pdf'),
       (8, 'person-1', 'applicants/person-1/unsubmitted.pdf'), (9, 'person-2', 'applicants/person-2/private.pdf')`);
   await db.query("UPDATE applications SET documents_snapshot = $1::jsonb", [JSON.stringify([
     { id: 7, name: "submitted.pdf", size: 123, contentType: "application/pdf", requiredFor: "Resume or CV" },
     { id: 9, name: "wrong-owner.pdf", size: 42, contentType: "application/pdf", requiredFor: "ID" },
   ])]);
-  const dispatcher = getGlobalDispatcher();
-  const blobHttp = new MockAgent();
-  blobHttp.disableNetConnect();
-  setGlobalDispatcher(blobHttp);
-  vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_teststore_secret");
-  const pool = blobHttp.get("https://teststore.private.blob.vercel-storage.com");
-  const path = "/applicants/person-1/original.pdf?cache=0";
-  pool.intercept({ path, method: "GET" }).reply(200, "submitted bytes");
-  pool.intercept({ path, method: "GET" }).reply(404, "missing");
-  pool.intercept({ path, method: "GET" }).reply(503, "unavailable");
-  try {
-    const applications = applicationsFor(handle, db);
-    const response = await applications.downloadDocument(id, 7);
-    expect(await response.text()).toBe("submitted bytes");
-    expect(response.headers.get("content-disposition")).toContain("submitted.pdf");
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
-    await expect(applications.downloadDocument(id, 8)).rejects.toMatchObject({ reason: "not-found" });
-    await expect(applications.downloadDocument(id, 9)).rejects.toMatchObject({ reason: "not-found" });
-    await expect(applications.downloadDocument(id + 1, 7)).rejects.toMatchObject({ reason: "not-found" });
-    await expect(applications.downloadDocument(id, 7)).rejects.toMatchObject({ reason: "not-found" });
-    await expect(applications.downloadDocument(id, 7)).rejects.toMatchObject({ reason: "unavailable" });
-    portal.endSession(handle);
-    await expect(applications.downloadDocument(id, 7)).rejects.toMatchObject({ reason: "invalid" });
-    blobHttp.assertNoPendingInterceptors();
-  } finally {
-    setGlobalDispatcher(dispatcher);
-    await blobHttp.close();
+  const files = { viewUrl: vi.fn().mockResolvedValue("https://files.test/signed") };
+  const applications = applicationsFor(handle, db, files);
+  const response = await applications.downloadDocument(id, 7);
+  expect(response.status).toBe(307);
+  expect(response.headers.get("location")).toBe("https://files.test/signed");
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  for (const documentId of [8, 9, 10]) {
+    await expect(applications.downloadDocument(id, documentId)).rejects.toMatchObject({ reason: "not-found" });
   }
+  await expect(applications.downloadDocument(id + 1, 7)).rejects.toMatchObject({ reason: "not-found" });
+  files.viewUrl.mockRejectedValue(new Error("unavailable"));
+  await expect(applications.downloadDocument(id, 7)).rejects.toMatchObject({ reason: "not-found" });
+  await db.query("UPDATE applicant_documents SET file_id = NULL WHERE id = 7");
+  files.viewUrl.mockClear();
+  await expect(applications.downloadDocument(id, 7)).rejects.toMatchObject({ reason: "not-found" });
+  expect(files.viewUrl).not.toHaveBeenCalled();
+  portal.endSession(handle);
+  await expect(applications.downloadDocument(id, 7)).rejects.toMatchObject({ reason: "invalid" });
 });
 
 it.each(["denied", "invalid", "unavailable"] as const)("document download fails closed on %s", async (reason) => {

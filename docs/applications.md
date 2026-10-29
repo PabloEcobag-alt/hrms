@@ -52,18 +52,24 @@ and an HRMS `downloadUrl`. Each Job Posting Required Document with no matching
 snapshot `requiredFor` is included as `{ requiredFor, status: "Requested" }`.
 Requested is a display status only; nothing is written or sent to the Applicant.
 
-`downloadDocument(applicationId, documentId)` returns an attachment Response.
-Every download rechecks the Recruitment and Hiring Module, verifies membership
-in that Application's snapshot and ownership in Careers' `applicant_documents`,
-and streams from the existing private Blob store. No storage path or reusable
-Blob URL is exposed. The HTTP endpoint is
-`GET /api/applications/:id/documents/:documentId`; responses disable browser caching.
-The snapshot supplies the filename even if live document metadata changes.
-Missing Applications, unsubmitted documents, wrong-owner documents and missing
-files return not-found. Storage failures return unavailable.
+`downloadDocument(applicationId, documentId)` returns a 307 redirect to a short-lived
+file-storage signed address. Every request rechecks the Staff session and Recruitment
+and Hiring Module, snapshot membership and Applicant ownership. The HTTP endpoint
+stays `GET /api/applications/:id/documents/:documentId`; responses disable caching.
+Missing Applications, unsubmitted or wrong-owner Documents, missing `file_id` and
+file-storage failures return not-found. Missing File ids and storage failures are
+logged without exposing credentials or signed addresses.
 
-HRMS must have access to the **same private Blob store as Careers**, via its
-Vercel store connection or `BLOB_READ_WRITE_TOKEN`. No database migration is needed.
+Document list data includes `contentType` and `uploadedAt` (a Date, or null when
+live metadata is unavailable), read from the Applicant's Document metadata.
+The snapshot continues to supply the displayed filename.
+
+Set `API_GATEWAY_URL` and `API_GATEWAY_CALLER_KEY` in HRMS. The gateway Caller
+must map to system code `HRMS`. HRMS only reads Careers' `file_id`; Careers owns
+the schema migration. No HRMS database migration is needed. A real signed PNG
+address was checked: HTTP 200, image/png, no attachment disposition, permitting
+inline viewing. Staff can save the opened file; the existing download icon retains
+its route. Deployment operators must verify both settings in HRMS's environment.
 
 ## Scheduling interviews
 
