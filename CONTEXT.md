@@ -57,11 +57,21 @@ A summary block on the Dashboard that belongs to exactly one Module and is shown
 _Avoid_: Tile, panel
 
 **Key Summary Card**:
-A kind of Widget that shows one headline figure at the top of the Dashboard, with an optional line of detail beneath it. The Key Summary Cards are Total Employee, New Hire, Open jobs, Attendance Rate, and Pending Leaves. The hiring cards (owned by Recruitment and Hiring) sit in a row of their own above the rest.
+A kind of Widget that shows one headline figure at the top of the Dashboard, with an optional line of detail beneath it. The Key Summary Cards are Total Employee, New Hire, Open jobs, Applicants, Attendance Rate, and Pending Leaves. The hiring cards (owned by Recruitment and Hiring) sit in a row of their own above the rest.
 _Avoid_: KPI, stat tile, Open Positions (replaced by Open jobs)
 
 **Open jobs**:
 A Key Summary Card, owned by Recruitment and Hiring, that shows how many Job Postings are Open right now, with the openings they list in total and the locations they cover. "Jobs" is only the card's label; the thing counted is the Open Job Posting. It is read from the shared database and is not affected by any date range.
+
+**Applicants**:
+A Key Summary Card, owned by Recruitment and Hiring, that shows how many Applications were received in the Dashboard Range, including HR-added, rejected and withdrawn ones. Its caption is the comparison with the Previous period. "Applicants" is only the card's label; the thing counted is the Application.
+
+**Dashboard Range**:
+The period the range-dependent Key Summary Cards cover, chosen from the presets This month (default), Last month, Last 30 days, Last 90 days and Year to date. It is kept in the URL, an unknown value means This month, and every date and boundary is in Manila time. This month and Year to date run from the start of the month or year to today; Last 30 and 90 days include today. Only Staff who hold Recruitment and Hiring see the selector.
+_Avoid_: Date filter, period (for the range itself)
+
+**Previous period**:
+The period a Dashboard Range is compared with. This month is compared with the same days of last month (held at the end of a shorter month), Last month with the month before it, Last 30 or 90 days with the same number of days just before, and Year to date with the same days of last year. A comparison is left out when either period has no data.
 
 **Detail Widget**:
 A kind of Widget that shows more than one headline figure, such as a chart or a list, below the Key Summary Cards. The Detail Widgets are Headcount Trend, Department Distribution, Recent Activity, and Upcoming Events. In the code, `Widget` on its own is not used; the Key Summary Cards and the Detail Widgets are separate types.
