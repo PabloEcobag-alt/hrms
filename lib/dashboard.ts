@@ -8,6 +8,12 @@ export interface DashboardSummary {
   openJobs?: { count: number; openings: number; locations: number };
   /** Applications received in the Dashboard Range and in its Previous period. */
   applicants?: { current: number; previous: number };
+  /** Interviews starting in the current Manila week (finished ones included) and the ones starting today. */
+  interviews?: { thisWeek: number; today: number };
+  /** Decided offers (accepted of decided) with a decision date in the range and in its Previous period. */
+  offers?: { current: OfferOutcomes; previous: OfferOutcomes };
+  /** Applications Hired in the range and in its Previous period, with the mean whole days from applying to being Hired (null with no hires). */
+  timeToHire?: { current: HireTimes; previous: HireTimes };
   attendanceRate?: { present: number; expected: number };
   pendingLeaves?: { total: number };
   /** Month-end Total Employee figures, `month` as "YYYY-MM". The current month is taken from `totalEmployee`. */
@@ -17,6 +23,16 @@ export interface DashboardSummary {
   recentActivity?: ActivityEvent[];
   /** Company holidays and approved leave not yet started. */
   upcomingEvents?: UpcomingEvent[];
+}
+
+export interface OfferOutcomes {
+  accepted: number;
+  decided: number;
+}
+
+export interface HireTimes {
+  hires: number;
+  averageDays: number | null;
 }
 
 export interface ActivityEvent {
@@ -47,6 +63,8 @@ export interface KeySummaryCard {
   caption: string | null;
   /** The comparison the caption states, for its colour and arrow; null when the card makes none. */
   comparison: Comparison | null;
+  /** True when the Dashboard Range changes the card, so it shows a skeleton while the range reloads. */
+  rangeDependent: boolean;
 }
 
 export interface Comparison {
@@ -77,7 +95,17 @@ export function compare(
 }
 
 export const RANGE_IDS = ["this-month", "last-month", "last-30-days", "last-90-days", "year-to-date"] as const;
-export type RangeId = (typeof RANGE_IDS)[number];
+export type PresetRangeId = (typeof RANGE_IDS)[number];
+export type RangeId = PresetRangeId | "custom";
+
+/** The widest Custom range, in days from the first date to the last. */
+export const MAX_CUSTOM_RANGE_DAYS = 366;
+
+/** The two dates of a Custom range as they appear in the URL, "YYYY-MM-DD". */
+export interface CustomRangeDates {
+  from: string;
+  to: string;
+}
 
 export interface RangePeriod {
   /** First and last day, "YYYY-MM-DD" in Manila time. */
@@ -97,7 +125,7 @@ export interface DashboardRange extends RangePeriod {
   previous: RangePeriod & { wording: string; from: Date; to: Date };
 }
 
-export const RANGE_OPTIONS: readonly { id: RangeId; name: string }[] = [
+export const RANGE_OPTIONS: readonly { id: PresetRangeId; name: string }[] = [
   { id: "this-month", name: "This month" },
   { id: "last-month", name: "Last month" },
   { id: "last-30-days", name: "Last 30 days" },
@@ -106,7 +134,7 @@ export const RANGE_OPTIONS: readonly { id: RangeId; name: string }[] = [
 ];
 
 /** A known preset from the URL, otherwise This month. */
-export function parseRangeId(value: unknown): RangeId {
+export function parseRangeId(value: unknown): PresetRangeId {
   return RANGE_IDS.find((id) => id === value) ?? "this-month";
 }
 
@@ -135,15 +163,46 @@ function monthsBack(d: Date, months: number): Date {
   return day(y, m, Math.min(d.getUTCDate(), daysInMonth(y, m)));
 }
 
-/** The Dashboard Range for a preset, with `now` read as a Manila date. Pure: `now` is passed in. */
-export function dashboardRange(id: unknown, now: Date): DashboardRange {
-  const rangeId = parseRangeId(id);
+/** A real calendar date written "YYYY-MM-DD", as a UTC date standing for that day; null for anything else. */
+function parseDay(value: unknown): Date | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) || iso(parsed) !== value ? null : parsed;
+}
+
+/** Today's date in Manila, "YYYY-MM-DD". */
+export function manilaToday(now: Date): string {
+  return iso(new Date(now.getTime() + MANILA_OFFSET_MS));
+}
+
+/** Why two dates cannot be a Custom range, or null when they can. Strict: real dates, in order, not after today, at most a year apart. */
+export function customRangeProblem(from: unknown, to: unknown, now: Date): "invalid" | "future" | "order" | "too-long" | null {
+  const start = parseDay(from);
+  const end = parseDay(to);
+  if (!start || !end) return "invalid";
+  if (end > parseDay(manilaToday(now))!) return "future";
+  if (start > end) return "order";
+  if ((end.getTime() - start.getTime()) / MS_PER_DAY > MAX_CUSTOM_RANGE_DAYS) return "too-long";
+  return null;
+}
+
+/** The Dashboard Range for a preset or a Custom range, with `now` read as a Manila date. A Custom range that fails `customRangeProblem` is This month. Pure: `now` is passed in. */
+export function dashboardRange(id: unknown, now: Date, custom?: { from: unknown; to: unknown }): DashboardRange {
+  const customRange = id === "custom" && custom && customRangeProblem(custom.from, custom.to, now) === null ? custom : null;
+  const rangeId: RangeId = customRange ? "custom" : parseRangeId(id);
   const m = new Date(now.getTime() + MANILA_OFFSET_MS);
   const [y, mo] = [m.getUTCFullYear(), m.getUTCMonth()];
   const today = day(y, mo, m.getUTCDate());
 
   let start: Date, end: Date, previousStart: Date, previousEnd: Date, wording: string;
-  if (rangeId === "this-month") {
+  if (customRange) {
+    start = parseDay(customRange.from)!;
+    end = parseDay(customRange.to)!;
+    const length = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY) + 1;
+    previousEnd = addDays(start, -1);
+    previousStart = addDays(previousEnd, 1 - length);
+    wording = "vs previous period";
+  } else if (rangeId === "this-month") {
     start = day(y, mo, 1);
     end = today;
     previousStart = day(y, mo - 1, 1);
@@ -170,7 +229,7 @@ export function dashboardRange(id: unknown, now: Date): DashboardRange {
     wording = `vs previous ${days} days`;
   }
 
-  const name = RANGE_OPTIONS.find((o) => o.id === rangeId)!.name;
+  const name = rangeId === "custom" ? "Custom" : RANGE_OPTIONS.find((o) => o.id === rangeId)!.name;
   return {
     id: rangeId,
     name,
@@ -189,6 +248,11 @@ export function dashboardRange(id: unknown, now: Date): DashboardRange {
   };
 }
 
+/** The URL query that selects a range: the page and the Export route read the same one. */
+export function rangeSearch(range: DashboardRange): string {
+  return range.id === "custom" ? `range=custom&from=${range.start}&to=${range.end}` : `range=${range.id}`;
+}
+
 /** The hiring cards sit in a row of their own above the rest. */
 type CardRow = "hiring" | "people";
 
@@ -199,8 +263,36 @@ interface CardSpec {
   row: CardRow;
   figure: (summary: DashboardSummary) => string | null;
   caption?: (summary: DashboardSummary) => string | null;
-  /** The comparison with the Previous period, which doubles as the caption. */
+  /** The comparison with the Previous period, shown under the caption. */
   comparison?: (summary: DashboardSummary, range: DashboardRange) => Comparison | null;
+  /** Set when the Dashboard Range changes the card. */
+  rangeDependent?: true;
+}
+
+/** "vs last month" as the tail of "4 days faster than last month". */
+const than = (wording: string) => wording.replace(/^vs /, "");
+
+const wholePercent = ({ accepted, decided }: OfferOutcomes) => Math.round((accepted / decided) * 100);
+
+/** Offer acceptance moved, in percentage points of the whole percents the card shows. Left out unless both periods have decided offers. */
+function compareOffers({ current, previous }: { current: OfferOutcomes; previous: OfferOutcomes }, wording: string): Comparison | null {
+  if (current.decided === 0 || previous.decided === 0) return null;
+  const points = wholePercent(current) - wholePercent(previous);
+  if (points === 0) return { text: `No change ${wording}`, tone: "none", arrow: "none" };
+  return { text: `${Math.abs(points)} ${Math.abs(points) === 1 ? "pt" : "pts"} ${wording}`, tone: points > 0 ? "good" : "bad", arrow: points > 0 ? "up" : "down" };
+}
+
+/** Time to hire moved, in the whole days the card shows: faster is good. Left out unless both periods have hires. */
+function compareHireTimes({ current, previous }: { current: HireTimes; previous: HireTimes }, wording: string): Comparison | null {
+  if (current.averageDays === null || previous.averageDays === null) return null;
+  const days = Math.round(previous.averageDays) - Math.round(current.averageDays);
+  if (days === 0) return { text: `No change ${wording}`, tone: "none", arrow: "none" };
+  const n = Math.abs(days);
+  return {
+    text: `${n} ${n === 1 ? "day" : "days"} ${days > 0 ? "faster" : "slower"} than ${than(wording)}`,
+    tone: days > 0 ? "good" : "bad",
+    arrow: days > 0 ? "down" : "up",
+  };
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -225,6 +317,36 @@ const CARDS: readonly CardSpec[] = [
     row: "hiring",
     figure: ({ applicants: d }) => (d ? String(d.current) : null),
     comparison: ({ applicants: d }, range) => (d ? compare(d.current, d.previous, range.previous.wording) : null),
+    rangeDependent: true,
+  },
+  {
+    label: "Interviews this week",
+    module: "Recruitment and Hiring",
+    href: "/job-postings",
+    row: "hiring",
+    // Zero is a figure: the card shows 0, not "Nothing to show yet", until interviews are stored.
+    figure: ({ interviews: d }) => (d ? String(d.thisWeek) : null),
+    caption: ({ interviews: d }) => (d ? (d.today > 0 ? `${d.today} today` : "None today") : null),
+  },
+  {
+    label: "Offer acceptance",
+    module: "Recruitment and Hiring",
+    href: "/job-postings",
+    row: "hiring",
+    figure: ({ offers: d }) => (d && d.current.decided > 0 ? `${wholePercent(d.current)}%` : null),
+    caption: ({ offers: d }) =>
+      d && d.current.decided > 0 ? `${d.current.accepted} of ${plural(d.current.decided, "offer")} accepted` : null,
+    comparison: ({ offers: d }, range) => (d ? compareOffers(d, range.previous.wording) : null),
+    rangeDependent: true,
+  },
+  {
+    label: "Average time to hire",
+    module: "Recruitment and Hiring",
+    href: "/job-postings",
+    row: "hiring",
+    figure: ({ timeToHire: d }) => (d && d.current.averageDays !== null ? plural(Math.round(d.current.averageDays), "day") : null),
+    comparison: ({ timeToHire: d }, range) => (d ? compareHireTimes(d, range.previous.wording) : null),
+    rangeDependent: true,
   },
   {
     label: "Total Employee",
@@ -277,11 +399,44 @@ export function cardRowsFor(
         label: c.label,
         module: c.module,
         figure: c.figure(summary),
-        caption: comparison?.text ?? c.caption?.(summary) ?? null,
+        caption: c.caption?.(summary) ?? null,
         comparison,
+        rangeDependent: c.rangeDependent ?? false,
       };
     }),
   ).filter((cards) => cards.length > 0);
+}
+
+/** The current Monday-to-Sunday week and today, as Manila days: query `starts_at >= from AND starts_at < to`. Pure: `now` is passed in. */
+export function manilaWeek(now: Date): { week: { from: Date; to: Date }; today: { from: Date; to: Date } } {
+  const today = parseDay(manilaToday(now))!;
+  const monday = addDays(today, -((today.getUTCDay() + 6) % 7));
+  return {
+    week: { from: manilaMidnight(monday), to: manilaMidnight(addDays(monday, 7)) },
+    today: { from: manilaMidnight(today), to: manilaMidnight(addDays(today, 1)) },
+  };
+}
+
+const csvCell = (value: string) => (/[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+
+/** A comparison as written in the Export: the direction the number moved leads the figure the text starts with. */
+const exportedComparison = ({ text, arrow }: Comparison) =>
+  /^\d/.test(text) && arrow !== "none" ? `${arrow === "up" ? "+" : "-"}${text}` : text;
+
+/** The Export file: one row per hiring card, from the same figures the page shows. Value is empty when a card has nothing to show. */
+export function hiringCardsCsv(cards: readonly KeySummaryCard[]): string {
+  const rows = cards.map((card) => [
+    card.label,
+    card.figure ?? "",
+    card.caption ?? "",
+    card.comparison ? exportedComparison(card.comparison) : "",
+  ]);
+  return `${[["Card", "Value", "Detail", "Comparison"], ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+
+/** The Export file name, carrying the range's first and last day. */
+export function exportFileName(range: DashboardRange): string {
+  return `dashboard-hiring-${range.start}_to_${range.end}.csv`;
 }
 
 export interface HeadcountPoint {

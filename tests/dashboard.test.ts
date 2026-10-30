@@ -13,7 +13,7 @@ const rowLabels = (pages: string[]) => cardRows(pages).map((row) => row.map((c) 
 describe("Key Summary Cards", () => {
   it("put the hiring cards in their own row above the existing cards, in fixed order", () => {
     expect(rowLabels([...ALL].reverse())).toEqual([
-      ["Open jobs", "Applicants"],
+      ["Open jobs", "Applicants", "Interviews this week", "Offer acceptance", "Average time to hire"],
       ["Total Employee", "New Hire", "Attendance Rate", "Pending Leaves"],
     ]);
   });
@@ -25,7 +25,7 @@ describe("Key Summary Cards", () => {
   it("only include rows and cards whose Module is held", () => {
     expect(rowLabels(["/attendance"])).toEqual([["Attendance Rate", "Pending Leaves"]]);
     expect(rowLabels(["/employee-information"])).toEqual([["Total Employee", "New Hire"]]);
-    expect(rowLabels(["/job-postings"])).toEqual([["Open jobs", "Applicants"]]);
+    expect(rowLabels(["/job-postings"])).toEqual([["Open jobs", "Applicants", "Interviews this week", "Offer acceptance", "Average time to hire"]]);
   });
 
   it("are empty when none of the owning Modules is held, ignoring unknown addresses", () => {
@@ -33,8 +33,8 @@ describe("Key Summary Cards", () => {
   });
 
   it("have no figure or caption when their data is missing", () => {
-    expect(cards(ALL).map((c) => c.figure)).toEqual([null, null, null, null, null, null]);
-    expect(cards(ALL).map((c) => c.caption)).toEqual([null, null, null, null, null, null]);
+    expect(cards(ALL).map((c) => c.figure)).toEqual(Array(9).fill(null));
+    expect(cards(ALL).map((c) => c.caption)).toEqual(Array(9).fill(null));
   });
 
   it("derive the Total Employee figure as the sum of statuses", () => {
@@ -44,7 +44,7 @@ describe("Key Summary Cards", () => {
 
   it("show New Hire and Pending Leaves figures", () => {
     const found = cards(ALL, { newHire: { count: 4 }, pendingLeaves: { total: 0 } });
-    expect(found.map((c) => c.figure)).toEqual([null, null, null, "4", null, "0"]);
+    expect(found.slice(5).map((c) => c.figure)).toEqual([null, "4", null, "0"]);
   });
 
   it("show Open jobs as the count of Open Job Postings with openings and locations in the caption", () => {
@@ -373,23 +373,23 @@ describe("Applicants card", () => {
   const applicants = (summary: DashboardSummary) => cardRowsFor(["/job-postings"], summary, range)[0].find((c) => c.label === "Applicants")!;
 
   it("sits after Open jobs in the hiring row", () => {
-    expect(cardRowsFor(["/job-postings"], {}, range)[0].map((c) => c.label)).toEqual(["Open jobs", "Applicants"]);
+    expect(cardRowsFor(["/job-postings"], {}, range)[0].slice(0, 2).map((c) => c.label)).toEqual(["Open jobs", "Applicants"]);
   });
 
-  it("shows the count of Applications in the range with the comparison as its caption", () => {
+  it("shows the count of Applications in the range with the comparison under it", () => {
     expect(applicants({ applicants: { current: 45, previous: 40 } })).toMatchObject({
       figure: "45",
-      caption: "13% vs last month",
-      comparison: { tone: "good", arrow: "up" },
+      caption: null,
+      comparison: { text: "13% vs last month", tone: "good", arrow: "up" },
     });
   });
 
   it("shows a real zero as 0 with the drop from the Previous period", () => {
-    expect(applicants({ applicants: { current: 0, previous: 12 } })).toMatchObject({ figure: "0", caption: "100% vs last month", comparison: { tone: "bad", arrow: "down" } });
+    expect(applicants({ applicants: { current: 0, previous: 12 } })).toMatchObject({ figure: "0", comparison: { text: "100% vs last month", tone: "bad", arrow: "down" } });
   });
 
   it("leaves the comparison out when the Previous period had none", () => {
-    expect(applicants({ applicants: { current: 7, previous: 0 } })).toMatchObject({ figure: "7", caption: null });
+    expect(applicants({ applicants: { current: 7, previous: 0 } })).toMatchObject({ figure: "7", comparison: null });
   });
 
   it("has no figure while the data is missing", () => {
