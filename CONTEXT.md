@@ -57,8 +57,11 @@ A summary block on the Dashboard that belongs to exactly one Module and is shown
 _Avoid_: Tile, panel
 
 **Key Summary Card**:
-A kind of Widget that shows one headline figure at the top of the Dashboard. The Key Summary Cards are Total Employee, New Hire, Open Positions, Attendance Rate, and Pending Leaves.
-_Avoid_: KPI, stat tile
+A kind of Widget that shows one headline figure at the top of the Dashboard, with an optional line of detail beneath it. The Key Summary Cards are Total Employee, New Hire, Open jobs, Attendance Rate, and Pending Leaves. The hiring cards (owned by Recruitment and Hiring) sit in a row of their own above the rest.
+_Avoid_: KPI, stat tile, Open Positions (replaced by Open jobs)
+
+**Open jobs**:
+A Key Summary Card, owned by Recruitment and Hiring, that shows how many Job Postings are Open right now, with the openings they list in total and the locations they cover. "Jobs" is only the card's label; the thing counted is the Open Job Posting. It is read from the shared database and is not affected by any date range.
 
 **Detail Widget**:
 A kind of Widget that shows more than one headline figure, such as a chart or a list, below the Key Summary Cards. The Detail Widgets are Headcount Trend, Department Distribution, Recent Activity, and Upcoming Events. In the code, `Widget` on its own is not used; the Key Summary Cards and the Detail Widgets are separate types.

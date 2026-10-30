@@ -4,7 +4,8 @@ import type { Module } from "@/lib/modules";
 export interface DashboardSummary {
   totalEmployee?: { regular: number; probationary: number; ojt: number };
   newHire?: { count: number };
-  openPositions?: { openRequisitions: number; targetHires: number };
+  /** Open Job Postings: how many, the openings they list in total (postings that give no number add none) and their distinct locations. */
+  openJobs?: { count: number; openings: number; locations: number };
   attendanceRate?: { present: number; expected: number };
   pendingLeaves?: { total: number };
   /** Month-end Total Employee figures, `month` as "YYYY-MM". The current month is taken from `totalEmployee`. */
@@ -40,20 +41,41 @@ export interface KeySummaryCard {
   module: Module["name"];
   /** The headline figure, or null when the owning Module has no data to show yet. */
   figure: string | null;
+  /** The line under the figure, or null when there is none. */
+  caption: string | null;
 }
+
+/** The hiring cards sit in a row of their own above the rest. */
+type CardRow = "hiring" | "people";
 
 interface CardSpec {
   label: string;
   module: Module["name"];
   href: Module["href"];
+  row: CardRow;
   figure: (summary: DashboardSummary) => string | null;
+  caption?: (summary: DashboardSummary) => string | null;
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 const CARDS: readonly CardSpec[] = [
+  {
+    label: "Open jobs",
+    module: "Recruitment and Hiring",
+    href: "/job-postings",
+    row: "hiring",
+    figure: ({ openJobs: d }) => (d && d.count > 0 ? String(d.count) : null),
+    caption: ({ openJobs: d }) =>
+      d && d.count > 0
+        ? [d.openings > 0 ? plural(d.openings, "opening") : "", plural(d.locations, "location")].filter(Boolean).join(" · ")
+        : null,
+  },
   {
     label: "Total Employee",
     module: "Employee Information",
     href: "/employee-information",
+    row: "people",
     figure: ({ totalEmployee: d }) =>
       d ? String(d.regular + d.probationary + d.ojt) : null,
   },
@@ -61,19 +83,14 @@ const CARDS: readonly CardSpec[] = [
     label: "New Hire",
     module: "Employee Information",
     href: "/employee-information",
+    row: "people",
     figure: ({ newHire: d }) => (d ? String(d.count) : null),
-  },
-  {
-    label: "Open Positions",
-    module: "Recruitment and Hiring",
-    href: "/job-postings",
-    figure: ({ openPositions: d }) =>
-      d ? `${d.openRequisitions} open / ${d.targetHires} target` : null,
   },
   {
     label: "Attendance Rate",
     module: "Attendance",
     href: "/attendance",
+    row: "people",
     figure: ({ attendanceRate: d }) =>
       d && d.expected > 0 ? `${Math.round((d.present / d.expected) * 100)}%` : null,
   },
@@ -81,23 +98,30 @@ const CARDS: readonly CardSpec[] = [
     label: "Pending Leaves",
     module: "Attendance",
     href: "/attendance",
+    row: "people",
     figure: ({ pendingLeaves: d }) => (d ? String(d.total) : null),
   },
 ];
 
+const CARD_ROWS: readonly CardRow[] = ["hiring", "people"];
+
 /**
- * The Key Summary Cards a Staff member sees, in fixed order: one per card whose owning Module they
- * hold. Unknown addresses are ignored, so only real Modules can produce a card.
+ * The Key Summary Cards a Staff member sees, as the Dashboard rows (hiring first, then the rest), each
+ * in fixed order: one card per card whose owning Module they hold. A row with no card is left out, and
+ * unknown addresses are ignored, so only real Modules can produce a card.
  */
-export function cardsFor(
+export function cardRowsFor(
   permittedPages: readonly string[],
   summary: DashboardSummary,
-): KeySummaryCard[] {
-  return CARDS.filter((c) => permittedPages.includes(c.href)).map((c) => ({
-    label: c.label,
-    module: c.module,
-    figure: c.figure(summary),
-  }));
+): KeySummaryCard[][] {
+  return CARD_ROWS.map((row) =>
+    CARDS.filter((c) => c.row === row && permittedPages.includes(c.href)).map((c) => ({
+      label: c.label,
+      module: c.module,
+      figure: c.figure(summary),
+      caption: c.caption?.(summary) ?? null,
+    })),
+  ).filter((cards) => cards.length > 0);
 }
 
 export interface HeadcountPoint {
