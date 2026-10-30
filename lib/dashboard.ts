@@ -6,6 +6,8 @@ export interface DashboardSummary {
   newHire?: { count: number };
   /** Open Job Postings: how many, the openings they list in total (postings that give no number add none) and their distinct locations. */
   openJobs?: { count: number; openings: number; locations: number };
+  /** Applications received in the Dashboard Range and in its Previous period. */
+  applicants?: { current: number; previous: number };
   attendanceRate?: { present: number; expected: number };
   pendingLeaves?: { total: number };
   /** Month-end Total Employee figures, `month` as "YYYY-MM". The current month is taken from `totalEmployee`. */
@@ -43,6 +45,148 @@ export interface KeySummaryCard {
   figure: string | null;
   /** The line under the figure, or null when there is none. */
   caption: string | null;
+  /** The comparison the caption states, for its colour and arrow; null when the card makes none. */
+  comparison: Comparison | null;
+}
+
+export interface Comparison {
+  /** E.g. "12% vs last month" or "No change vs last month". */
+  text: string;
+  /** Green for improvement, red for adverse, grey for none. */
+  tone: "good" | "bad" | "none";
+  /** The direction the number moved; none when there was no change. */
+  arrow: "up" | "down" | "none";
+}
+
+/** Percent change from the Previous period, whole numbers. Left out (null) when either period has no data: a null figure, or a Previous period of zero to divide by. A counted zero is data. */
+export function compare(
+  current: number | null,
+  previous: number | null,
+  wording: string,
+  better: "higher" | "lower" = "higher",
+): Comparison | null {
+  if (current === null || !previous) return null;
+  const change = ((current - previous) / previous) * 100;
+  if (Math.abs(change) < 0.5) return { text: `No change ${wording}`, tone: "none", arrow: "none" };
+  const up = change > 0;
+  return {
+    text: `${Math.round(Math.abs(change))}% ${wording}`,
+    tone: up === (better === "higher") ? "good" : "bad",
+    arrow: up ? "up" : "down",
+  };
+}
+
+export const RANGE_IDS = ["this-month", "last-month", "last-30-days", "last-90-days", "year-to-date"] as const;
+export type RangeId = (typeof RANGE_IDS)[number];
+
+export interface RangePeriod {
+  /** First and last day, "YYYY-MM-DD" in Manila time. */
+  start: string;
+  end: string;
+}
+
+/** The Dashboard Range: the period the range-dependent cards cover, and the Previous period they compare with. */
+export interface DashboardRange extends RangePeriod {
+  id: RangeId;
+  name: string;
+  /** "This month · 1–28 Oct 2026". */
+  label: string;
+  /** Manila midnight starting the first day, and starting the day after the last: query `>= from AND < to`. */
+  from: Date;
+  to: Date;
+  previous: RangePeriod & { wording: string; from: Date; to: Date };
+}
+
+export const RANGE_OPTIONS: readonly { id: RangeId; name: string }[] = [
+  { id: "this-month", name: "This month" },
+  { id: "last-month", name: "Last month" },
+  { id: "last-30-days", name: "Last 30 days" },
+  { id: "last-90-days", name: "Last 90 days" },
+  { id: "year-to-date", name: "Year to date" },
+];
+
+/** A known preset from the URL, otherwise This month. */
+export function parseRangeId(value: unknown): RangeId {
+  return RANGE_IDS.find((id) => id === value) ?? "this-month";
+}
+
+// Manila has no daylight saving, so a fixed +08:00 offset is exact. Days are handled as UTC dates standing for Manila calendar days.
+const MANILA_OFFSET_MS = 8 * 3_600_000;
+const day = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d));
+const addDays = (d: Date, n: number) => new Date(d.getTime() + n * MS_PER_DAY);
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const daysInMonth = (y: number, m: number) => day(y, m + 1, 0).getUTCDate();
+const manilaMidnight = (d: Date) => new Date(`${iso(d)}T00:00:00+08:00`);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function periodLabel(start: Date, end: Date): string {
+  const [sd, sm, sy] = [start.getUTCDate(), MONTHS[start.getUTCMonth()], start.getUTCFullYear()];
+  const [ed, em, ey] = [end.getUTCDate(), MONTHS[end.getUTCMonth()], end.getUTCFullYear()];
+  if (sy !== ey) return `${sd} ${sm} ${sy} – ${ed} ${em} ${ey}`;
+  if (sm !== em) return `${sd} ${sm} – ${ed} ${em} ${ey}`;
+  return sd === ed ? `${sd} ${sm} ${sy}` : `${sd}–${ed} ${sm} ${sy}`;
+}
+
+/** The same day-of-month `months` earlier, held at the end of a shorter month (31 Mar -> 28 Feb). */
+function monthsBack(d: Date, months: number): Date {
+  const first = day(d.getUTCFullYear(), d.getUTCMonth() - months, 1);
+  const y = first.getUTCFullYear();
+  const m = first.getUTCMonth();
+  return day(y, m, Math.min(d.getUTCDate(), daysInMonth(y, m)));
+}
+
+/** The Dashboard Range for a preset, with `now` read as a Manila date. Pure: `now` is passed in. */
+export function dashboardRange(id: unknown, now: Date): DashboardRange {
+  const rangeId = parseRangeId(id);
+  const m = new Date(now.getTime() + MANILA_OFFSET_MS);
+  const [y, mo] = [m.getUTCFullYear(), m.getUTCMonth()];
+  const today = day(y, mo, m.getUTCDate());
+
+  let start: Date, end: Date, previousStart: Date, previousEnd: Date, wording: string;
+  if (rangeId === "this-month") {
+    start = day(y, mo, 1);
+    end = today;
+    previousStart = day(y, mo - 1, 1);
+    previousEnd = monthsBack(today, 1);
+    wording = "vs last month";
+  } else if (rangeId === "last-month") {
+    start = day(y, mo - 1, 1);
+    end = day(y, mo, 0);
+    previousStart = day(y, mo - 2, 1);
+    previousEnd = day(y, mo - 1, 0);
+    wording = "vs month before";
+  } else if (rangeId === "year-to-date") {
+    start = day(y, 0, 1);
+    end = today;
+    previousStart = day(y - 1, 0, 1);
+    previousEnd = monthsBack(today, 12);
+    wording = "vs last year";
+  } else {
+    const days = rangeId === "last-30-days" ? 30 : 90;
+    start = addDays(today, 1 - days);
+    end = today;
+    previousStart = addDays(start, -days);
+    previousEnd = addDays(start, -1);
+    wording = `vs previous ${days} days`;
+  }
+
+  const name = RANGE_OPTIONS.find((o) => o.id === rangeId)!.name;
+  return {
+    id: rangeId,
+    name,
+    label: `${name} · ${periodLabel(start, end)}`,
+    start: iso(start),
+    end: iso(end),
+    from: manilaMidnight(start),
+    to: manilaMidnight(addDays(end, 1)),
+    previous: {
+      start: iso(previousStart),
+      end: iso(previousEnd),
+      wording,
+      from: manilaMidnight(previousStart),
+      to: manilaMidnight(addDays(previousEnd, 1)),
+    },
+  };
 }
 
 /** The hiring cards sit in a row of their own above the rest. */
@@ -55,8 +199,11 @@ interface CardSpec {
   row: CardRow;
   figure: (summary: DashboardSummary) => string | null;
   caption?: (summary: DashboardSummary) => string | null;
+  /** The comparison with the Previous period, which doubles as the caption. */
+  comparison?: (summary: DashboardSummary, range: DashboardRange) => Comparison | null;
 }
 
+const MS_PER_DAY = 86_400_000;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const CARDS: readonly CardSpec[] = [
@@ -70,6 +217,14 @@ const CARDS: readonly CardSpec[] = [
       d && d.count > 0
         ? [d.openings > 0 ? plural(d.openings, "opening") : "", plural(d.locations, "location")].filter(Boolean).join(" · ")
         : null,
+  },
+  {
+    label: "Applicants",
+    module: "Recruitment and Hiring",
+    href: "/job-postings",
+    row: "hiring",
+    figure: ({ applicants: d }) => (d ? String(d.current) : null),
+    comparison: ({ applicants: d }, range) => (d ? compare(d.current, d.previous, range.previous.wording) : null),
   },
   {
     label: "Total Employee",
@@ -113,14 +268,19 @@ const CARD_ROWS: readonly CardRow[] = ["hiring", "people"];
 export function cardRowsFor(
   permittedPages: readonly string[],
   summary: DashboardSummary,
+  range: DashboardRange,
 ): KeySummaryCard[][] {
   return CARD_ROWS.map((row) =>
-    CARDS.filter((c) => c.row === row && permittedPages.includes(c.href)).map((c) => ({
-      label: c.label,
-      module: c.module,
-      figure: c.figure(summary),
-      caption: c.caption?.(summary) ?? null,
-    })),
+    CARDS.filter((c) => c.row === row && permittedPages.includes(c.href)).map((c) => {
+      const comparison = c.comparison?.(summary, range) ?? null;
+      return {
+        label: c.label,
+        module: c.module,
+        figure: c.figure(summary),
+        caption: comparison?.text ?? c.caption?.(summary) ?? null,
+        comparison,
+      };
+    }),
   ).filter((cards) => cards.length > 0);
 }
 
@@ -149,7 +309,6 @@ export type DetailWidget = {
   | { id: "upcoming-events"; data: UpcomingEvent[] | null }
 );
 
-const MS_PER_DAY = 86_400_000;
 const TREND_MONTHS = 12;
 const ACTIVITY_LIMIT = 10;
 const EVENT_LIMIT = 10;

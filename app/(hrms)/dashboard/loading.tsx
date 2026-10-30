@@ -1,11 +1,11 @@
 import { DETAIL_WIDGET_HEIGHT, detailWidgetRowClass } from "@/components/dashboard/detail-widget-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cardRowsFor, detailWidgetRowsFor } from "@/lib/dashboard";
+import { cardRowsFor, dashboardRange, detailWidgetRowsFor } from "@/lib/dashboard";
 import { getShell } from "@/lib/portal/staff";
 
 export default async function Loading() {
   const { permittedPages } = await getShell();
-  const cardRows = cardRowsFor(permittedPages, {});
+  const cardRows = cardRowsFor(permittedPages, {}, dashboardRange(undefined, new Date()));
   const widgetRows = detailWidgetRowsFor(permittedPages, {}, new Date());
 
   return (

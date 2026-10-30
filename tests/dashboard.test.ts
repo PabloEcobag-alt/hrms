@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cardRowsFor, detailWidgetRowsFor, type DashboardSummary, type UpcomingEvent } from "@/lib/dashboard";
+import { cardRowsFor, compare, dashboardRange, detailWidgetRowsFor, parseRangeId, type DashboardSummary, type UpcomingEvent } from "@/lib/dashboard";
+
+const RANGE = dashboardRange(undefined, new Date("2026-10-28T12:05:00Z"));
 
 const ALL = ["/dashboard", "/attendance", "/employee-information", "/job-postings"];
 
-const cardRows = (pages: string[], summary: DashboardSummary = {}) => cardRowsFor(pages, summary);
+const cardRows = (pages: string[], summary: DashboardSummary = {}) => cardRowsFor(pages, summary, RANGE);
 const cards = (pages: string[], summary: DashboardSummary = {}) => cardRows(pages, summary).flat();
 const labels = (pages: string[], summary: DashboardSummary = {}) => cards(pages, summary).map((c) => c.label);
 const rowLabels = (pages: string[]) => cardRows(pages).map((row) => row.map((c) => c.label));
@@ -11,7 +13,7 @@ const rowLabels = (pages: string[]) => cardRows(pages).map((row) => row.map((c) 
 describe("Key Summary Cards", () => {
   it("put the hiring cards in their own row above the existing cards, in fixed order", () => {
     expect(rowLabels([...ALL].reverse())).toEqual([
-      ["Open jobs"],
+      ["Open jobs", "Applicants"],
       ["Total Employee", "New Hire", "Attendance Rate", "Pending Leaves"],
     ]);
   });
@@ -23,16 +25,16 @@ describe("Key Summary Cards", () => {
   it("only include rows and cards whose Module is held", () => {
     expect(rowLabels(["/attendance"])).toEqual([["Attendance Rate", "Pending Leaves"]]);
     expect(rowLabels(["/employee-information"])).toEqual([["Total Employee", "New Hire"]]);
-    expect(rowLabels(["/job-postings"])).toEqual([["Open jobs"]]);
+    expect(rowLabels(["/job-postings"])).toEqual([["Open jobs", "Applicants"]]);
   });
 
   it("are empty when none of the owning Modules is held, ignoring unknown addresses", () => {
-    expect(cardRowsFor(["/dashboard", "/payroll-ess", "/not-a-module"], {})).toEqual([]);
+    expect(cardRowsFor(["/dashboard", "/payroll-ess", "/not-a-module"], {}, RANGE)).toEqual([]);
   });
 
   it("have no figure or caption when their data is missing", () => {
-    expect(cards(ALL).map((c) => c.figure)).toEqual([null, null, null, null, null]);
-    expect(cards(ALL).map((c) => c.caption)).toEqual([null, null, null, null, null]);
+    expect(cards(ALL).map((c) => c.figure)).toEqual([null, null, null, null, null, null]);
+    expect(cards(ALL).map((c) => c.caption)).toEqual([null, null, null, null, null, null]);
   });
 
   it("derive the Total Employee figure as the sum of statuses", () => {
@@ -42,7 +44,7 @@ describe("Key Summary Cards", () => {
 
   it("show New Hire and Pending Leaves figures", () => {
     const found = cards(ALL, { newHire: { count: 4 }, pendingLeaves: { total: 0 } });
-    expect(found.map((c) => c.figure)).toEqual([null, null, "4", null, "0"]);
+    expect(found.map((c) => c.figure)).toEqual([null, null, null, "4", null, "0"]);
   });
 
   it("show Open jobs as the count of Open Job Postings with openings and locations in the caption", () => {
@@ -262,5 +264,135 @@ describe("Upcoming Events", () => {
 
   it("is absent when nothing is coming up", () => {
     expect(items({ upcomingEvents: [ev("past", "2026-01-01")] })).toBeNull();
+  });
+});
+
+describe("Dashboard Range", () => {
+  // 28 Oct 2026, 20:05 in Manila (12:05 UTC).
+  const now = new Date("2026-10-28T12:05:00Z");
+
+  it("accepts only a known preset and otherwise falls back to This month", () => {
+    expect(parseRangeId("last-30-days")).toBe("last-30-days");
+    expect(parseRangeId("year-to-date")).toBe("year-to-date");
+    for (const bad of [undefined, "", "weekly", "THIS-MONTH", ["last-month", "x"]]) expect(parseRangeId(bad)).toBe("this-month");
+  });
+
+  it("defaults to This month, from the 1st to today in Manila time", () => {
+    expect(dashboardRange(undefined, now)).toMatchObject({ id: "this-month", name: "This month", start: "2026-10-01", end: "2026-10-28", label: "This month · 1–28 Oct 2026" });
+  });
+
+  it("takes today from Manila time, not UTC", () => {
+    // 31 Oct 17:00 UTC is already 1 Nov in Manila.
+    expect(dashboardRange("this-month", new Date("2026-10-31T17:00:00Z"))).toMatchObject({ start: "2026-11-01", end: "2026-11-01" });
+  });
+
+  it("bounds the range by Manila midnights", () => {
+    const r = dashboardRange("this-month", now);
+    expect(r.from.toISOString()).toBe("2026-09-30T16:00:00.000Z");
+    expect(r.to.toISOString()).toBe("2026-10-28T16:00:00.000Z");
+  });
+
+  it("compares This month with the same days of last month", () => {
+    expect(dashboardRange("this-month", now).previous).toMatchObject({ start: "2026-09-01", end: "2026-09-28", wording: "vs last month" });
+  });
+
+  it("caps the Previous period at the end of a shorter month", () => {
+    const r = dashboardRange("this-month", new Date("2026-03-30T04:00:00Z"));
+    expect(r.previous).toMatchObject({ start: "2026-02-01", end: "2026-02-28" });
+  });
+
+  it("rolls This month back across a year start", () => {
+    const r = dashboardRange("this-month", new Date("2026-01-15T04:00:00Z"));
+    expect(r.previous).toMatchObject({ start: "2025-12-01", end: "2025-12-15" });
+  });
+
+  it("covers the whole of last month, compared with the month before", () => {
+    expect(dashboardRange("last-month", now)).toMatchObject({ start: "2026-09-01", end: "2026-09-30", label: "Last month · 1–30 Sep 2026" });
+    expect(dashboardRange("last-month", now).previous).toMatchObject({ start: "2026-08-01", end: "2026-08-31", wording: "vs month before" });
+  });
+
+  it("handles last month across a year start", () => {
+    const r = dashboardRange("last-month", new Date("2026-01-10T04:00:00Z"));
+    expect(r).toMatchObject({ start: "2025-12-01", end: "2025-12-31", label: "Last month · 1–31 Dec 2025" });
+    expect(r.previous).toMatchObject({ start: "2025-11-01", end: "2025-11-30" });
+  });
+
+  it("covers the last 30 and 90 days including today, against the same number of days before", () => {
+    const thirty = dashboardRange("last-30-days", now);
+    expect(thirty).toMatchObject({ start: "2026-09-29", end: "2026-10-28", label: "Last 30 days · 29 Sep – 28 Oct 2026" });
+    expect(thirty.previous).toMatchObject({ start: "2026-08-30", end: "2026-09-28", wording: "vs previous 30 days" });
+    const ninety = dashboardRange("last-90-days", now);
+    expect(ninety).toMatchObject({ start: "2026-07-31", end: "2026-10-28" });
+    expect(ninety.previous).toMatchObject({ start: "2026-05-02", end: "2026-07-30", wording: "vs previous 90 days" });
+  });
+
+  it("runs Year to date from 1 January, against the same days of last year", () => {
+    const r = dashboardRange("year-to-date", now);
+    expect(r).toMatchObject({ start: "2026-01-01", end: "2026-10-28", label: "Year to date · 1 Jan – 28 Oct 2026" });
+    expect(r.previous).toMatchObject({ start: "2025-01-01", end: "2025-10-28", wording: "vs last year" });
+  });
+
+  it("caps Year to date on 29 February", () => {
+    const r = dashboardRange("year-to-date", new Date("2028-02-29T04:00:00Z"));
+    expect(r.previous).toMatchObject({ start: "2027-01-01", end: "2027-02-28" });
+  });
+
+  it("spans a year start in the label of a rolling range", () => {
+    expect(dashboardRange("last-30-days", new Date("2026-01-05T04:00:00Z")).label).toBe("Last 30 days · 7 Dec 2025 – 5 Jan 2026");
+  });
+});
+
+describe("comparison", () => {
+  const w = "vs last month";
+
+  it("shows a rise in green with an up arrow, as a whole-number percentage", () => {
+    expect(compare(112, 100, w)).toEqual({ text: "12% vs last month", tone: "good", arrow: "up" });
+    expect(compare(1, 3, w)).toEqual({ text: "67% vs last month", tone: "bad", arrow: "down" });
+  });
+
+  it("colours a fall green when lower is better, keeping the arrow on the direction of the number", () => {
+    expect(compare(80, 100, w, "lower")).toEqual({ text: "20% vs last month", tone: "good", arrow: "down" });
+    expect(compare(120, 100, w, "lower")).toEqual({ text: "20% vs last month", tone: "bad", arrow: "up" });
+  });
+
+  it("says No change in grey when the move is under 0.5%", () => {
+    expect(compare(1000, 1004, w)).toEqual({ text: "No change vs last month", tone: "none", arrow: "none" });
+    expect(compare(5, 5, w)).toEqual({ text: "No change vs last month", tone: "none", arrow: "none" });
+    expect(compare(1005, 1000, w)?.text).toBe("1% vs last month");
+  });
+
+  it("is left out when either period has no data, but a real drop to zero is data", () => {
+    expect(compare(0, 10, w)).toEqual({ text: "100% vs last month", tone: "bad", arrow: "down" });
+    expect(compare(10, 0, w)).toBeNull();
+    expect(compare(null, 10, w)).toBeNull();
+  });
+});
+
+describe("Applicants card", () => {
+  const range = dashboardRange("this-month", new Date("2026-10-28T12:05:00Z"));
+  const applicants = (summary: DashboardSummary) => cardRowsFor(["/job-postings"], summary, range)[0].find((c) => c.label === "Applicants")!;
+
+  it("sits after Open jobs in the hiring row", () => {
+    expect(cardRowsFor(["/job-postings"], {}, range)[0].map((c) => c.label)).toEqual(["Open jobs", "Applicants"]);
+  });
+
+  it("shows the count of Applications in the range with the comparison as its caption", () => {
+    expect(applicants({ applicants: { current: 45, previous: 40 } })).toMatchObject({
+      figure: "45",
+      caption: "13% vs last month",
+      comparison: { tone: "good", arrow: "up" },
+    });
+  });
+
+  it("shows a real zero as 0 with the drop from the Previous period", () => {
+    expect(applicants({ applicants: { current: 0, previous: 12 } })).toMatchObject({ figure: "0", caption: "100% vs last month", comparison: { tone: "bad", arrow: "down" } });
+  });
+
+  it("leaves the comparison out when the Previous period had none", () => {
+    expect(applicants({ applicants: { current: 7, previous: 0 } })).toMatchObject({ figure: "7", caption: null });
+  });
+
+  it("has no figure while the data is missing", () => {
+    expect(applicants({})).toMatchObject({ figure: null, caption: null });
   });
 });
