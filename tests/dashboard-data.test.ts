@@ -2,9 +2,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { dashboardRange } from "@/lib/dashboard";
-import { applicantsSummary, dashboardSummaryFor, openJobsSummary } from "@/lib/dashboard-data";
+import { applicantsSummary, dashboardSummaryFor, interviewsSummary, offersSummary, openJobsSummary, timeToHireSummary } from "@/lib/dashboard-data";
 
-const RANGE = dashboardRange("this-month", new Date("2026-10-28T12:05:00Z"));
+const NOW = new Date("2026-10-28T12:05:00Z");
+const RANGE = dashboardRange("this-month", NOW);
 
 let db: PGlite;
 
@@ -53,19 +54,22 @@ it("is all zero when no Job Posting is Open", async () => {
 
 it("fills the summary with Open jobs for Staff who hold Recruitment and Hiring", async () => {
   await post("a", "open", "Antipolo", 2);
-  expect(await dashboardSummaryFor(["/dashboard", "/job-postings"], RANGE, db)).toEqual({
+  expect(await dashboardSummaryFor(["/dashboard", "/job-postings"], RANGE, NOW, db)).toEqual({
     openJobs: { count: 1, openings: 2, locations: 1 },
     applicants: { current: 0, previous: 0 },
+    interviews: { thisWeek: 0, today: 0 },
+    offers: { current: { accepted: 0, decided: 0 }, previous: { accepted: 0, decided: 0 } },
+    timeToHire: { current: { hires: 0, averageDays: null }, previous: { hires: 0, averageDays: null } },
   });
 });
 
 it("does not read the database for Staff who do not hold Recruitment and Hiring", async () => {
   const unreachable = { query: () => Promise.reject(new Error("must not be queried")) };
-  expect(await dashboardSummaryFor(["/dashboard", "/attendance"], RANGE, unreachable)).toEqual({});
+  expect(await dashboardSummaryFor(["/dashboard", "/attendance"], RANGE, NOW, unreachable)).toEqual({});
 });
 
 let received = 0;
-async function receive(appliedAt: string, status = "Received") {
+async function receive(appliedAt: string, status = "Received"): Promise<number> {
   received += 1;
   await db.query("INSERT INTO applicant_profiles VALUES ($1, 'Someone', $2)", [`p${received}`, `p${received}@example.test`]);
   await db.query(
@@ -73,6 +77,7 @@ async function receive(appliedAt: string, status = "Received") {
      VALUES ($1, 'a', $1, $2, '{"fullName":"Someone"}', '[]', $3, $3)`,
     [`p${received}`, status, appliedAt],
   );
+  return (await db.query<{ id: number }>("SELECT max(id)::int AS id FROM applications")).rows[0].id;
 }
 
 async function addByHr(appliedAt: string) {
@@ -103,4 +108,88 @@ it("counts HR-added, rejected and withdrawn Applications too", async () => {
   await receive("2026-10-07T08:00:00Z", "Withdrawn");
   await addByHr("2026-10-08T08:00:00Z");
   expect(await applicantsSummary(RANGE, db)).toEqual({ current: 4, previous: 0 });
+});
+
+/** An Application received at `appliedAt` that reached the given Stages at the given times. */
+async function moved(appliedAt: string, history: [stage: string, at: string][], status = "Received") {
+  const id = await receive(appliedAt, status);
+  for (const [stage, at] of history) {
+    await db.query("INSERT INTO hrms_application_stage_history (application_id, stage, reached_at) VALUES ($1, $2, $3)", [id, stage, at]);
+  }
+  return id;
+}
+
+async function interview(startsAt: string) {
+  const id = await receive("2026-10-01T00:00:00Z");
+  await db.query(
+    `INSERT INTO hrms_application_interviews (application_id, starts_at, ends_at, type, interviewer_name, location)
+     VALUES ($1, $2, ($2::timestamptz + interval '1 hour'), 'Online', 'Ada', 'Zoom')`,
+    [id, startsAt],
+  );
+}
+
+it("counts this Manila week's interviews, finished ones included, and today's", async () => {
+  await post("a", "open", "Antipolo", 1);
+  await interview("2026-10-25T15:59:00Z"); // Sun 25 Oct 23:59 Manila: last week
+  await interview("2026-10-25T16:00:00Z"); // Mon 26 Oct 00:00 Manila: first moment of the week
+  await interview("2026-10-27T16:00:00Z"); // Wed 28 Oct 00:00 Manila: today
+  await interview("2026-10-28T03:00:00Z"); // Wed 28 Oct 11:00 Manila: today, already finished
+  await interview("2026-10-28T15:59:00Z"); // Wed 28 Oct 23:59 Manila: today
+  await interview("2026-11-01T15:59:00Z"); // Sun 1 Nov 23:59 Manila: last moment of the week
+  await interview("2026-11-01T16:00:00Z"); // Mon 2 Nov 00:00 Manila: next week
+  expect(await interviewsSummary(NOW, db)).toEqual({ thisWeek: 5, today: 3 });
+});
+
+it("counts no interviews when none is stored", async () => {
+  expect(await interviewsSummary(NOW, db)).toEqual({ thisWeek: 0, today: 0 });
+});
+
+it("counts decided offers by decision date: accepted when Hired, not accepted when Rejected after Offer", async () => {
+  await post("a", "open", "Antipolo", 1);
+  await moved("2026-09-01T00:00:00Z", [["Offer", "2026-10-02T00:00:00Z"], ["Hired", "2026-10-10T00:00:00Z"]]); // accepted
+  await moved("2026-09-01T00:00:00Z", [["Offer", "2026-10-02T00:00:00Z"], ["Hired", "2026-10-11T00:00:00Z"]]); // accepted
+  await moved("2026-09-01T00:00:00Z", [["Offer", "2026-10-03T00:00:00Z"], ["Rejected", "2026-10-12T00:00:00Z"]], "Rejected"); // not accepted
+  await moved("2026-09-01T00:00:00Z", [["Offer", "2026-10-03T00:00:00Z"]]); // still waiting: in neither number
+  await moved("2026-09-01T00:00:00Z", [["Interview", "2026-10-03T00:00:00Z"], ["Rejected", "2026-10-12T00:00:00Z"]], "Rejected"); // never reached Offer
+  await moved("2026-08-01T00:00:00Z", [["Offer", "2026-09-02T00:00:00Z"], ["Hired", "2026-09-10T00:00:00Z"]]); // Previous period
+  expect(await offersSummary(RANGE, db)).toEqual({
+    current: { accepted: 2, decided: 3 },
+    previous: { accepted: 1, decided: 1 },
+  });
+});
+
+it("dates a decided offer by when it was decided, not when it was made", async () => {
+  await post("a", "open", "Antipolo", 1);
+  await moved("2026-09-01T00:00:00Z", [["Offer", "2026-09-28T00:00:00Z"], ["Hired", "2026-10-05T00:00:00Z"]]); // offered in Sep, hired in Oct
+  expect(await offersSummary(RANGE, db)).toEqual({
+    current: { accepted: 1, decided: 1 },
+    previous: { accepted: 0, decided: 0 },
+  });
+});
+
+it("averages whole Manila days from applying to being Hired, in the range and in the Previous period", async () => {
+  await post("a", "open", "Antipolo", 1);
+  await moved("2026-10-01T00:00:00Z", [["Hired", "2026-10-11T00:00:00Z"]]); // 10 days
+  await moved("2026-09-20T00:00:00Z", [["Hired", "2026-10-15T00:00:00Z"]]); // 25 days
+  await moved("2026-09-20T00:00:00Z", [["Offer", "2026-10-02T00:00:00Z"]]); // not hired
+  await moved("2026-08-01T00:00:00Z", [["Hired", "2026-09-12T00:00:00Z"]]); // Previous period, 42 days
+  await moved("2026-09-01T00:00:00Z", [["Hired", "2026-11-20T00:00:00Z"]]); // after the range
+  expect(await timeToHireSummary(RANGE, db)).toEqual({
+    current: { hires: 2, averageDays: 17.5 },
+    previous: { hires: 1, averageDays: 42 },
+  });
+});
+
+it("counts the days between Manila dates, not between instants", async () => {
+  await post("a", "open", "Antipolo", 1);
+  // Applied 1 Oct 23:00 Manila, hired 2 Oct 01:00 Manila: two hours apart, one calendar day.
+  await moved("2026-10-01T15:00:00Z", [["Hired", "2026-10-01T17:00:00Z"]]);
+  expect((await timeToHireSummary(RANGE, db)).current).toEqual({ hires: 1, averageDays: 1 });
+});
+
+it("has no average when nobody was Hired", async () => {
+  expect(await timeToHireSummary(RANGE, db)).toEqual({
+    current: { hires: 0, averageDays: null },
+    previous: { hires: 0, averageDays: null },
+  });
 });

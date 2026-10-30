@@ -57,21 +57,33 @@ A summary block on the Dashboard that belongs to exactly one Module and is shown
 _Avoid_: Tile, panel
 
 **Key Summary Card**:
-A kind of Widget that shows one headline figure at the top of the Dashboard, with an optional line of detail beneath it. The Key Summary Cards are Total Employee, New Hire, Open jobs, Applicants, Attendance Rate, and Pending Leaves. The hiring cards (owned by Recruitment and Hiring) sit in a row of their own above the rest.
+A kind of Widget that shows one headline figure at the top of the Dashboard, with an optional line of detail beneath it. The Key Summary Cards are Total Employee, New Hire, Open jobs, Applicants, Interviews this week, Offer acceptance, Average time to hire, Attendance Rate, and Pending Leaves. The hiring cards (owned by Recruitment and Hiring) sit in a row of their own above the rest.
 _Avoid_: KPI, stat tile, Open Positions (replaced by Open jobs)
 
 **Open jobs**:
 A Key Summary Card, owned by Recruitment and Hiring, that shows how many Job Postings are Open right now, with the openings they list in total and the locations they cover. "Jobs" is only the card's label; the thing counted is the Open Job Posting. It is read from the shared database and is not affected by any date range.
 
 **Applicants**:
-A Key Summary Card, owned by Recruitment and Hiring, that shows how many Applications were received in the Dashboard Range, including HR-added, rejected and withdrawn ones. Its caption is the comparison with the Previous period. "Applicants" is only the card's label; the thing counted is the Application.
+A Key Summary Card, owned by Recruitment and Hiring, that shows how many Applications were received in the Dashboard Range, including HR-added, rejected and withdrawn ones. Its detail line is the comparison with the Previous period. "Applicants" is only the card's label; the thing counted is the Application.
+
+**Interviews this week**:
+A Key Summary Card, owned by Recruitment and Hiring, that shows how many Interviews start in the current Monday-to-Sunday week (Manila time), finished ones included, with how many start today. It shows 0, not "Nothing to show yet", when there are none. It is not affected by the Dashboard Range and makes no comparison.
+
+**Decided offer**:
+An Application that reached the Offer Stage and then left it with an answer: reached Hired (accepted) or Rejected (not accepted). It is dated by when it was decided, not when the offer was made. An offer still waiting is not a decided offer. An Applicant who withdraws after an offer has no decision date to read, so is not counted.
+
+**Offer acceptance**:
+A Key Summary Card, owned by Recruitment and Hiring, that shows accepted decided offers as a whole percent of the decided offers whose decision date is in the Dashboard Range, with "X of Y offers accepted" beneath. Its comparison with the Previous period is in percentage points. It shows "Nothing to show yet", never 0%, when no offer was decided.
+
+**Average time to hire**:
+A Key Summary Card, owned by Recruitment and Hiring, that shows the mean number of whole days (Manila dates) from an Application being received to being Hired, over the Applications Hired in the Dashboard Range. Its comparison with the Previous period says how many days faster or slower. It shows "Nothing to show yet", never 0 days, when nobody was Hired.
 
 **Dashboard Range**:
-The period the range-dependent Key Summary Cards cover, chosen from the presets This month (default), Last month, Last 30 days, Last 90 days and Year to date. It is kept in the URL, an unknown value means This month, and every date and boundary is in Manila time. This month and Year to date run from the start of the month or year to today; Last 30 and 90 days include today. Only Staff who hold Recruitment and Hiring see the selector.
+The period the range-dependent Key Summary Cards cover, chosen from the presets This month (default), Last month, Last 30 days, Last 90 days and Year to date, or as a Custom range of two dates no later than today and at most a year apart. It is kept in the URL, anything unknown or invalid means This month, and every date and boundary is in Manila time. This month and Year to date run from the start of the month or year to today; Last 30 and 90 days include today. Only Staff who hold Recruitment and Hiring see the selector.
 _Avoid_: Date filter, period (for the range itself)
 
 **Previous period**:
-The period a Dashboard Range is compared with. This month is compared with the same days of last month (held at the end of a shorter month), Last month with the month before it, Last 30 or 90 days with the same number of days just before, and Year to date with the same days of last year. A comparison is left out when either period has no data.
+The period a Dashboard Range is compared with. This month is compared with the same days of last month (held at the end of a shorter month), Last month with the month before it, Last 30 or 90 days with the same number of days just before, Year to date with the same days of last year, and a Custom range with the period of the same length just before it. A comparison is left out when either period has no data.
 
 **Detail Widget**:
 A kind of Widget that shows more than one headline figure, such as a chart or a list, below the Key Summary Cards. The Detail Widgets are Headcount Trend, Department Distribution, Recent Activity, and Upcoming Events. In the code, `Widget` on its own is not used; the Key Summary Cards and the Detail Widgets are separate types.
