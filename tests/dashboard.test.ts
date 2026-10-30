@@ -1,60 +1,80 @@
 import { describe, expect, it } from "vitest";
-import { cardsFor, detailWidgetRowsFor, type DashboardSummary, type UpcomingEvent } from "@/lib/dashboard";
+import { cardRowsFor, detailWidgetRowsFor, type DashboardSummary, type UpcomingEvent } from "@/lib/dashboard";
 
 const ALL = ["/dashboard", "/attendance", "/employee-information", "/job-postings"];
 
-const labels = (pages: string[], summary: DashboardSummary = {}) =>
-  cardsFor(pages, summary).map((c) => c.label);
+const cardRows = (pages: string[], summary: DashboardSummary = {}) => cardRowsFor(pages, summary);
+const cards = (pages: string[], summary: DashboardSummary = {}) => cardRows(pages, summary).flat();
+const labels = (pages: string[], summary: DashboardSummary = {}) => cards(pages, summary).map((c) => c.label);
+const rowLabels = (pages: string[]) => cardRows(pages).map((row) => row.map((c) => c.label));
 
 describe("Key Summary Cards", () => {
-  it("are shown in fixed order regardless of the order pages are held", () => {
-    expect(labels([...ALL].reverse())).toEqual([
-      "Total Employee",
-      "New Hire",
-      "Open Positions",
-      "Attendance Rate",
-      "Pending Leaves",
+  it("put the hiring cards in their own row above the existing cards, in fixed order", () => {
+    expect(rowLabels([...ALL].reverse())).toEqual([
+      ["Open jobs"],
+      ["Total Employee", "New Hire", "Attendance Rate", "Pending Leaves"],
     ]);
   });
 
-  it("only include cards whose Module is held", () => {
-    expect(labels(["/attendance"])).toEqual(["Attendance Rate", "Pending Leaves"]);
-    expect(labels(["/employee-information"])).toEqual(["Total Employee", "New Hire"]);
-    expect(labels(["/job-postings"])).toEqual(["Open Positions"]);
+  it("no longer include Open Positions", () => {
+    expect(labels(ALL)).not.toContain("Open Positions");
+  });
+
+  it("only include rows and cards whose Module is held", () => {
+    expect(rowLabels(["/attendance"])).toEqual([["Attendance Rate", "Pending Leaves"]]);
+    expect(rowLabels(["/employee-information"])).toEqual([["Total Employee", "New Hire"]]);
+    expect(rowLabels(["/job-postings"])).toEqual([["Open jobs"]]);
   });
 
   it("are empty when none of the owning Modules is held, ignoring unknown addresses", () => {
-    expect(cardsFor(["/dashboard", "/payroll-ess", "/not-a-module"], {})).toEqual([]);
+    expect(cardRowsFor(["/dashboard", "/payroll-ess", "/not-a-module"], {})).toEqual([]);
   });
 
-  it("have no figure when their data is missing", () => {
-    expect(cardsFor(ALL, {}).map((c) => c.figure)).toEqual([null, null, null, null, null]);
+  it("have no figure or caption when their data is missing", () => {
+    expect(cards(ALL).map((c) => c.figure)).toEqual([null, null, null, null, null]);
+    expect(cards(ALL).map((c) => c.caption)).toEqual([null, null, null, null, null]);
   });
 
   it("derive the Total Employee figure as the sum of statuses", () => {
-    const [total] = cardsFor(ALL, { totalEmployee: { regular: 10, probationary: 3, ojt: 2 } });
-    expect(total.figure).toBe("15");
+    const total = cards(ALL, { totalEmployee: { regular: 10, probationary: 3, ojt: 2 } }).find((c) => c.label === "Total Employee");
+    expect(total?.figure).toBe("15");
   });
 
-  it("show New Hire, Open Positions and Pending Leaves figures", () => {
-    const cards = cardsFor(ALL, {
-      newHire: { count: 4 },
-      openPositions: { openRequisitions: 12, targetHires: 20 },
-      pendingLeaves: { total: 0 },
-    });
-    expect(cards.map((c) => c.figure)).toEqual([null, "4", "12 open / 20 target", null, "0"]);
+  it("show New Hire and Pending Leaves figures", () => {
+    const found = cards(ALL, { newHire: { count: 4 }, pendingLeaves: { total: 0 } });
+    expect(found.map((c) => c.figure)).toEqual([null, null, "4", null, "0"]);
+  });
+
+  it("show Open jobs as the count of Open Job Postings with openings and locations in the caption", () => {
+    const [open] = cards(ALL, { openJobs: { count: 5, openings: 18, locations: 3 } });
+    expect(open).toMatchObject({ label: "Open jobs", figure: "5", caption: "18 openings · 3 locations" });
+  });
+
+  it("use singular wording in the Open jobs caption", () => {
+    const [open] = cards(ALL, { openJobs: { count: 1, openings: 1, locations: 1 } });
+    expect(open.caption).toBe("1 opening · 1 location");
+  });
+
+  it("leave openings out of the Open jobs caption when no posting says how many", () => {
+    const [open] = cards(ALL, { openJobs: { count: 3, openings: 0, locations: 2 } });
+    expect(open).toMatchObject({ figure: "3", caption: "2 locations" });
+  });
+
+  it("show nothing for Open jobs when there is no Open Job Posting", () => {
+    const [open] = cards(ALL, { openJobs: { count: 0, openings: 0, locations: 0 } });
+    expect(open).toMatchObject({ figure: null, caption: null });
   });
 
   it("round Attendance Rate to a whole percent", () => {
     const rate = (present: number, expected: number) =>
-      cardsFor(ALL, { attendanceRate: { present, expected } })[3].figure;
+      cards(ALL, { attendanceRate: { present, expected } }).find((c) => c.label === "Attendance Rate")?.figure;
     expect(rate(2, 3)).toBe("67%");
     expect(rate(1, 3)).toBe("33%");
     expect(rate(5, 5)).toBe("100%");
   });
 
   it("show no Attendance Rate figure when nobody is expected", () => {
-    expect(cardsFor(ALL, { attendanceRate: { present: 0, expected: 0 } })[3].figure).toBeNull();
+    expect(cards(ALL, { attendanceRate: { present: 0, expected: 0 } }).find((c) => c.label === "Attendance Rate")?.figure).toBeNull();
   });
 });
 
@@ -131,7 +151,7 @@ describe("Headcount Trend", () => {
 
   it("ends on the figure the Total Employee card shows", () => {
     const summary = { totalEmployee: { regular: 8, probationary: 1, ojt: 4 } };
-    const [card] = cardsFor(["/employee-information"], summary);
+    const [card] = cards(["/employee-information"], summary);
     expect(String(trend(summary)!.at(-1)!.total)).toBe(card.figure);
   });
 });

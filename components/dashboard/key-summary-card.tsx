@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import type { KeySummaryCard as KeySummaryCardData } from "@/lib/dashboard";
 
-export function KeySummaryCard({ label, figure }: KeySummaryCardData) {
+export function KeySummaryCard({ label, figure, caption }: KeySummaryCardData) {
   return (
     <Card className="h-32">
       <CardHeader>
@@ -11,7 +11,10 @@ export function KeySummaryCard({ label, figure }: KeySummaryCardData) {
         {figure === null ? (
           <p className="text-label-sm text-muted-foreground">Nothing to show yet</p>
         ) : (
-          <p className="text-headline-md">{figure}</p>
+          <>
+            <p className="text-headline-md">{figure}</p>
+            {caption && <p className="text-label-sm text-muted-foreground">{caption}</p>}
+          </>
         )}
       </CardContent>
     </Card>
